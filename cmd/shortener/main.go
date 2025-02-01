@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"http/internal/app" // Импортируем обработчики
+	"http/internal/app" 
 )
 
 func main() {
