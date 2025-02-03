@@ -51,6 +51,11 @@ func HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid method", http.StatusBadRequest)
+		return
+	}
+
 	id := strings.TrimPrefix(r.URL.Path, "/")
 	if id == "" {
 		http.Error(w, "Invalid ID", http.StatusBadRequest)
