@@ -52,6 +52,11 @@ func HandleShortenURL(w http.ResponseWriter, r *http.Request) {
     shortID := generateShortID()
     urlStorage[shortID] = url
 
+	baseURL := "http://localhost:8080" 
+    if cfg != nil && cfg.BaseURL != "" {
+        baseURL = cfg.BaseURL
+    }
+
 	shortURL := cfg.BaseURL + "/" + shortID
     w.Header().Set("Content-Type", "text/plain")
     w.WriteHeader(http.StatusCreated)
