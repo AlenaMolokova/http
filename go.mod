@@ -1,4 +1,4 @@
-module github.com/AlenaMolokova/http.git
+module github.com/AlenaMolokova/http
 
 go 1.22.11
 
