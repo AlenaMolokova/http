@@ -57,7 +57,8 @@ func HandleShortenURL(w http.ResponseWriter, r *http.Request) {
         baseURL = cfg.BaseURL
     }
 
-	shortURL := cfg.BaseURL + "/" + shortID
+	
+	shortURL := baseURL + "/" + shortID
     w.Header().Set("Content-Type", "text/plain")
     w.WriteHeader(http.StatusCreated)
     w.Write([]byte(shortURL))
