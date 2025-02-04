@@ -9,7 +9,9 @@ import (
 )
 
 func TestHandleShortenURL_Success(t *testing.T) {
-    req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com"))
+    cfg = &config.Config{BaseURL: "http://localhost:8080"}
+	
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com"))
     req.Header.Set("Content-Type", "text/plain")
     w := httptest.NewRecorder()
 
