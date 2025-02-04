@@ -15,15 +15,16 @@ const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 var cfg *config.Config
 
+var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 func InitHandlers(config *config.Config) {
     cfg = config
 }
 
 func generateShortID() string {
-    rand.Seed(time.Now().UnixNano())
     id := make([]byte, 8)
     for i := range id {
-        id[i] = letters[rand.Intn(len(letters))]
+        id[i] = letters[seededRand.Intn(len(letters))]
     }
     return string(id)
 }
