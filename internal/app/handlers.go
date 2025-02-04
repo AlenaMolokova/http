@@ -7,10 +7,17 @@ import (
     "strings"
     "time"
     "github.com/gorilla/mux"
+	"github.com/AlenaMolokova/http/internal/app/config"
 )
 
 var urlStorage = make(map[string]string)
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+var cfg *config.Config
+
+func InitHandlers(config *config.Config) {
+    cfg = config
+}
 
 func generateShortID() string {
     rand.Seed(time.Now().UnixNano())
@@ -44,7 +51,7 @@ func HandleShortenURL(w http.ResponseWriter, r *http.Request) {
     shortID := generateShortID()
     urlStorage[shortID] = url
 
-    shortURL := "http://localhost:8080/" + shortID
+	shortURL := cfg.BaseURL + "/" + shortID
     w.Header().Set("Content-Type", "text/plain")
     w.WriteHeader(http.StatusCreated)
     w.Write([]byte(shortURL))
