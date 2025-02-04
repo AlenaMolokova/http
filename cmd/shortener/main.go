@@ -4,25 +4,29 @@ import (
 	"log"
 	"net/http"
 
-	"http/internal/app" 
+	"github.com/AlenaMolokova/http/internal/app"
+	"github.com/gorilla/mux"
 )
 
 func main() {
-	mux := http.NewServeMux()
+	router := mux.NewRouter()
+	router.HandleFunc("/", app.HandleShortenURL).Methods(http.MethodPost)
+	router.HandleFunc("/{id}", app.HandleRedirect).Methods(http.MethodGet)
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" && r.Method == http.MethodPost {
-			app.HandleShortenURL(w, r)
-		} else if r.Method == http.MethodGet {
-			app.HandleRedirect(w, r)
-		} else {
-			http.Error(w, "Invalid request", http.StatusBadRequest)
-		}
+	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Not Found", http.StatusBadRequest)
+	})
+	router.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Method not allowed", http.StatusBadRequest)
 	})
 
+	server := &http.Server{
+		Addr:    ":8080",
+		Handler: router,
+	}
+
 	log.Println("Starting server on :8080")
-	err := http.ListenAndServe(":8080", mux)
-	if err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
