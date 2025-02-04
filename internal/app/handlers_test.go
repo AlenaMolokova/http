@@ -6,6 +6,7 @@ import (
     "net/http/httptest"
     "strings"
     "testing"
+	"github.com/AlenaMolokova/http/internal/app/config"
 )
 
 func TestHandleShortenURL_Success(t *testing.T) {
