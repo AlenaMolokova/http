@@ -2,38 +2,28 @@ package config
 
 import (
 	"flag"
-	"os"
+	"github.com/caarlos0/env/v9"
+	"log"
 )
 
 type Config struct {
-	ServerAddress string
-	BaseURL       string
+	ServerAddress string `env:"SERVER_ADDRESS" envDefault:"localhost:8080"`
+	BaseURL       string `env:"BASE_URL" envDefault:"http://localhost:8080"`
 }
 
 func InitConfig() *Config {
 	cfg := &Config{}
 
-	envServerAddress := os.Getenv("SERVER_ADDRESS")
-	envBaseURL := os.Getenv("BASE_URL")
+	if err := env.Parse(cfg); err != nil {
+		log.Fatalf("Ошибка парсинга конфигурации: %v", err)
+	}
 
-	defaultServerAddress := "localhost:8080"
-	defaultBaseURL := "http://localhost:8080"
+	serverAddress := flag.String("a", cfg.ServerAddress, "HTTP server address")
+	baseURL := flag.String("b", cfg.BaseURL, "Base URL for shortened URLs")
+	flag.Parse()
 
-	flag.StringVar(&cfg.ServerAddress, "a", "", "HTTP server address")
-    flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened URLs")
-    flag.Parse()
-
-	cfg.ServerAddress = firstNonEmpty(envServerAddress, cfg.ServerAddress, defaultServerAddress)
-	cfg.BaseURL = firstNonEmpty(envBaseURL, cfg.BaseURL, defaultBaseURL)
+	cfg.ServerAddress = *serverAddress
+	cfg.BaseURL = *baseURL
 
 	return cfg
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
