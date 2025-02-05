@@ -19,9 +19,9 @@ func InitConfig() *Config {
 	defaultServerAddress := "localhost:8080"
 	defaultBaseURL := "http://localhost:8080"
 
-	flag.StringVar(&cfg.ServerAddress, "a", "", "Адрес запуска HTTP-сервера")
-	flag.StringVar(&cfg.BaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
-	flag.Parse()
+	flag.StringVar(&cfg.ServerAddress, "a", "", "HTTP server address")
+    flag.StringVar(&cfg.BaseURL, "b", "", "Base URL for shortened URLs")
+    flag.Parse()
 
 	cfg.ServerAddress = firstNonEmpty(envServerAddress, cfg.ServerAddress, defaultServerAddress)
 	cfg.BaseURL = firstNonEmpty(envBaseURL, cfg.BaseURL, defaultBaseURL)
