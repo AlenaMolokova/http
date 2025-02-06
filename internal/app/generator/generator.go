@@ -5,17 +5,13 @@ import (
 	"time"
 )
 
-type URLGenerator interface {
-	Generate() string
-}
-
 type SimpleGenerator struct {
 	letters string
 	length  int
 	rnd     *rand.Rand
 }
 
-func NewSimpleGenerator(length int) *SimpleGenerator {
+func NewGenerator(length int) Generator {
 	return &SimpleGenerator{
 		letters: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
 		length:  length,

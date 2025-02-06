@@ -2,8 +2,9 @@ package config
 
 import (
 	"flag"
-	"github.com/caarlos0/env/v9"
 	"log"
+
+	"github.com/caarlos0/env/v9"
 )
 
 type Config struct {
@@ -11,7 +12,7 @@ type Config struct {
 	BaseURL       string `env:"BASE_URL" envDefault:"http://localhost:8080"`
 }
 
-func InitConfig() *Config {
+func NewConfig() *Config {
 	cfg := &Config{}
 
 	if err := env.Parse(cfg); err != nil {
