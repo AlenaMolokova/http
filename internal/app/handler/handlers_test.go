@@ -16,7 +16,7 @@ import (
 func TestHandleShortenURL_Success(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewSimpleGenerator(8)
+	generator := generator.NewGenerator(8)
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
@@ -39,7 +39,7 @@ func TestHandleShortenURL_Success(t *testing.T) {
 func TestHandleShortenURL_InvalidContentType(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewSimpleGenerator(8)
+	generator := generator.NewGenerator(8)
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
@@ -57,7 +57,7 @@ func TestHandleShortenURL_InvalidContentType(t *testing.T) {
 func TestHandleShortenURL_EmptyBody(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewSimpleGenerator(8)
+	generator := generator.NewGenerator(8)
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
@@ -75,14 +75,13 @@ func TestHandleShortenURL_EmptyBody(t *testing.T) {
 func TestHandleRedirect_Success(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewSimpleGenerator(8)
+	generator := generator.NewGenerator(8)
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/{id}", handler.HandleRedirect).Methods(http.MethodGet)
 
-	// Сохраняем тестовый URL в хранилище
 	shortID := generator.Generate()
 	originalURL := "https://example.com"
 	storage.Save(shortID, originalURL)
@@ -104,7 +103,7 @@ func TestHandleRedirect_Success(t *testing.T) {
 func TestHandleRedirect_NotFound(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewSimpleGenerator(8)
+	generator := generator.NewGenerator(8)
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 

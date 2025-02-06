@@ -13,10 +13,10 @@ import (
 )
 
 func main() {
-	cfg := config.InitConfig()
+	cfg := config.NewConfig()
 
 	urlStorage := memory.NewMemoryStorage()
-	urlGenerator := generator.NewSimpleGenerator(8)
+	urlGenerator := generator.NewGenerator(8)
 	urlService := service.NewURLService(urlStorage, urlGenerator, cfg.BaseURL)
 	urlHandler := handler.NewHandler(urlService)
 	urlRouter := router.NewRouter(urlHandler)
