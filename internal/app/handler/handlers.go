@@ -10,10 +10,10 @@ import (
 )
 
 type Handler struct {
-    service *service.URLService
+    service service.URLService
 }
 
-func NewHandler(service *service.URLService) *Handler {
+func NewHandler(service service.URLService) URLHandler {
     return &Handler{
         service: service,
     }
