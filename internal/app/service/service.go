@@ -1,17 +1,26 @@
 package service
 
 import (
-	"github.com/AlenaMolokova/http/internal/app/generator"
-	"github.com/AlenaMolokova/http/internal/app/storage"
+    "github.com/AlenaMolokova/http/internal/app/generator"
 )
 
+type URLStorage interface {
+	Save(shortID, originalURL string) error
+	Get(shortID string) (string, bool)
+}
+
+type URLService interface {
+	ShortenURL(originalURL string) (string, error)
+	GetOriginalURL(shortID string) (string, bool)
+}
+
 type service struct {
-	storage   storage.URLStorage
+	storage   URLStorage
 	generator generator.Generator
 	baseURL   string
 }
 
-func NewURLService(storage storage.URLStorage, generator generator.Generator, baseURL string) URLService {
+func NewURLService(storage URLStorage, generator generator.Generator, baseURL string) URLService {
 	return &service{
 		storage:   storage,
 		generator: generator,

@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+type Generator interface {
+	Generate() string
+}
+
 type SimpleGenerator struct {
 	letters string
 	length  int
