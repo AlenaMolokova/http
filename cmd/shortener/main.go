@@ -6,7 +6,6 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/config"
 	"github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/handler"
-	"github.com/AlenaMolokova/http/internal/app/middleware"
 	"github.com/AlenaMolokova/http/internal/app/router"
 	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/AlenaMolokova/http/internal/app/storage/memory"
@@ -28,7 +27,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    cfg.ServerAddress,
-		Handler:  urlRouter.InitRoutes(),
+		Handler: urlRouter.InitRoutes(),
 	}
 	logrus.WithFields(logrus.Fields{
 		"address":  cfg.ServerAddress,
