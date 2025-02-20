@@ -63,7 +63,7 @@ func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	originalURL, found := h.service.GetOriginalURL(id)
 	if !found {
 		logrus.WithField("id", id).Warn("URL not found")
-		http.Error(w, "URL not found", http.StatusNotFound)
+		http.Error(w, "URL not found", http.StatusBadRequest)
 		return
 	}
 
