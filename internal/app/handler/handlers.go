@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -48,6 +49,36 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(shortURL))
+}
+
+func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
+	var req ShortenRequest
+
+	err :=json.NewDecoder(r.Body).Decode(&req)
+	if err !=nil {
+		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	if req.URL =="" {
+		http.Error(w, "URL cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	shortURL, err :=h.service.ShortenURL(req.URL)
+	if err !=nil {
+		http.Error(w, "Failed to shorten URL",  http.StatusInternalServerError)
+		return
+	}
+
+	resp:=ShortenResponse{
+		Result: shortURL,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
