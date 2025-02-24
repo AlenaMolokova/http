@@ -11,6 +11,7 @@ import (
 
 type URLHandler interface {
 	HandleShortenURL(w http.ResponseWriter, r *http.Request)
+	HandleShortenURLJSON(w http.ResponseWriter, r *http.Request)
 	HandleRedirect(w http.ResponseWriter, r *http.Request)
 }
 
@@ -29,6 +30,7 @@ func (r *Router) InitRoutes() *mux.Router {
 
     router.Use(middleware.LoggingMiddleware)
 	router.HandleFunc("/", r.handler.HandleShortenURL).Methods(http.MethodPost)
+	router.HandleFunc("/api/shorten", r.handler.HandleShortenURLJSON).Methods(http.MethodPost)
 	router.HandleFunc("/{id}", r.handler.HandleRedirect).Methods(http.MethodGet)
 
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
