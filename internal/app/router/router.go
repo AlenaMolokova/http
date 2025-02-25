@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gorilla/mux"
-
 	"github.com/sirupsen/logrus"
     "github.com/AlenaMolokova/http/internal/app/middleware"
 )
