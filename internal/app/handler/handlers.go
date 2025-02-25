@@ -22,15 +22,15 @@ func NewHandler(service service.URLService) *Handler {
 }
 
 func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/plain")
-
-	if !strings.Contains(r.Header.Get("Content-Type"), "text/plain") {
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "" && !strings.Contains(contentType, "text/plain") {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
 		return
 	}
-
+	
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		logrus.WithError(err).Error("Failed to read request body")
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
@@ -54,8 +54,6 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	
 	var req ShortenRequest
 
 	if r.Body == nil {
@@ -64,15 +62,17 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	w.Header().Set("Content-Type", "application/json")
 
 	err :=json.NewDecoder(r.Body).Decode(&req)
 	if err !=nil {
-		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		logrus.WithError(err).Error("Invalid JSON format")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
 		return
 	}
 	
 	if req.URL =="" {
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
 		return
@@ -80,7 +80,7 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err :=h.service.ShortenURL(req.URL)
 	if err !=nil {
-		w.Header().Set("Content-Type", "application/json")
+		logrus.WithError(err).Error("Failed to shorten URL")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"})
 		return
@@ -90,7 +90,6 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 		Result: shortURL,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
 }
