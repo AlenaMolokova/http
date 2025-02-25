@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"strconv"
 
 	"github.com/sirupsen/logrus"
 )
@@ -103,11 +104,11 @@ func (s *FileStorage) loadFromFile() error {
 
 		s.urls[record.ShortURL] = record.OriginalURL
 
-		if id := 0; fmt.Sscanf(record.UUID, "%d", &id) == 1 {
-			if id > highestID {
-				highestID = id
-			}
+		id, err := strconv.Atoi(record.UUID)
+		if err == nil && id > highestID {
+			highestID = id
 		}
+		
 	}
 
 	if err := scanner.Err(); err != nil {
