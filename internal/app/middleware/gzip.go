@@ -9,72 +9,87 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func acceptsGzip(r *http.Request) bool {
-	acceptEncoding := r.Header.Get("Accept-Encoding")
-	return strings.Contains(acceptEncoding, "gzip")
+type gzipReader struct {
+	r  io.ReadCloser
+	gz *gzip.Reader
 }
 
-func isGzipped(r *http.Request) bool {
-	contentEncoding := r.Header.Get("Content-Encoding")
-	return strings.Contains(contentEncoding, "gzip")
+func (g *gzipReader) Read(p []byte) (n int, err error) {
+	return g.gz.Read(p)
 }
 
-func canCompress(contentType string) bool {
-	return strings.Contains(contentType, "application/json") || 
-	       strings.Contains(contentType, "text/html") ||
-	       strings.Contains(contentType, "text/plain")
+func (g *gzipReader) Close() error {
+	if err := g.gz.Close(); err != nil {
+		g.r.Close()
+		return err
+	}
+	return g.r.Close()
 }
 
-type gzipResponseWriter struct {
+type gzipWriter struct {
 	http.ResponseWriter
-	Writer io.Writer
+	w *gzip.Writer
 }
 
-func (grw gzipResponseWriter) Write(data []byte) (int, error) {
-	return grw.Writer.Write(data)
+func (g *gzipWriter) Write(p []byte) (int, error) {
+	return g.w.Write(p)
 }
+
 
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isGzipped(r) {
-			gzipReader, err := gzip.NewReader(r.Body)
+		acceptsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
+
+		contentEncoding := r.Header.Get("Content-Encoding")
+		sendsGzip := strings.Contains(contentEncoding, "gzip")
+
+		if sendsGzip {
+			body := r.Body
+			
+			gz, err := gzip.NewReader(body)
 			if err != nil {
 				logrus.WithError(err).Error("Failed to create gzip reader")
-				http.Error(w, "Failed to read gzipped request", http.StatusBadRequest)
+				http.Error(w, "Invalid gzip data", http.StatusBadRequest)
 				return
 			}
-			defer gzipReader.Close()
 			
-			r.Body = gzipReader
+			r.Body = &gzipReader{
+				r:  body,
+				gz: gz,
+			}
+			
+			if r.Header.Get("Content-Type") == "application/x-gzip" {
+				r.Header.Set("Content-Type", "text/plain")
+			}
+			
+			r.Header.Del("Content-Encoding")
 		}
 
 		contentType := w.Header().Get("Content-Type")
-		if acceptsGzip(r) && (contentType == "" || canCompress(contentType)) {
+		shouldCompress := acceptsGzip && (contentType == "" || 
+			strings.Contains(contentType, "application/json") || 
+			strings.Contains(contentType, "text/html") || 
+			strings.Contains(contentType, "text/plain"))
+
+		if shouldCompress {
+			gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+			if err != nil {
+				logrus.WithError(err).Error("Failed to create gzip writer")
+				next.ServeHTTP(w, r)
+				return
+			}
+			defer gz.Close()
+
 			w.Header().Set("Content-Encoding", "gzip")
 			w.Header().Add("Vary", "Accept-Encoding")
-			
-			gzipWriter := gzip.NewWriter(w)
-			defer gzipWriter.Close()
-			
-			next.ServeHTTP(gzipResponseWriter{ResponseWriter: w, Writer: gzipWriter}, r)
+
+			gzw := &gzipWriter{
+				ResponseWriter: w,
+				w:              gz,
+			}
+			next.ServeHTTP(gzw, r)
 		} else {
 			next.ServeHTTP(w, r)
 		}
 	})
-}
-
-type gzipReadCloser struct {
-	io.ReadCloser
-	gzipReader *gzip.Reader
-}
-
-func (gz *gzipReadCloser) Read(p []byte) (n int, err error) {
-	return gz.gzipReader.Read(p)
-}
-
-func (gz *gzipReadCloser) Close() error {
-	if err := gz.gzipReader.Close(); err != nil {
-		return err
-	}
-	return gz.ReadCloser.Close()
 }
