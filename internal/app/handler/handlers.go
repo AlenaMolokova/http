@@ -22,6 +22,8 @@ func NewHandler(service service.URLService) *Handler {
 }
 
 func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
 	if !strings.Contains(r.Header.Get("Content-Type"), "text/plain") {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
 		return
@@ -52,6 +54,8 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
 	var req ShortenRequest
 
 	if r.Body == nil {
