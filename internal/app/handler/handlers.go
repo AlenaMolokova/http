@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/AlenaMolokova/http/internal/app/service"
@@ -27,7 +28,7 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
 		return
 	}
-	
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to read request body")
@@ -39,6 +40,12 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	originalURL := strings.TrimSpace(string(body))
 	if originalURL == "" {
 		http.Error(w, "Empty URL", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := url.Parse(originalURL); err != nil {
+		logrus.WithError(err).Error("Invalid URL format")
+		http.Error(w, "Invalid URL format", http.StatusBadRequest)
 		return
 	}
 
@@ -64,29 +71,36 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	err :=json.NewDecoder(r.Body).Decode(&req)
-	if err !=nil {
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		logrus.WithError(err).Error("Invalid JSON format")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
 		return
 	}
-	
-	if req.URL =="" {
+
+	if req.URL == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
 		return
 	}
 
-	shortURL, err :=h.service.ShortenURL(req.URL)
-	if err !=nil {
+	if _, err := url.Parse(req.URL); err != nil {
+		logrus.WithError(err).Error("Invalid URL format")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
+		return
+	}
+
+	shortURL, err := h.service.ShortenURL(req.URL)
+	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten URL")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"})
 		return
 	}
 
-	resp:=ShortenResponse{
+	resp := ShortenResponse{
 		Result: shortURL,
 	}
 
