@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -66,6 +68,76 @@ func TestHandleShortenURL_EmptyBody(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	handler.HandleShortenURL(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleShortenURLJSON_Success(t *testing.T) {
+	cfg := &config.Config{BaseURL: "http://localhost:8080"}
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	service := service.NewURLService(storage, generator, cfg.BaseURL)
+	handler := NewHandler(service)
+
+	requestBody := ShortenRequest{URL: "https://example.com"}
+	jsonBody, _ := json.Marshal(requestBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleShortenURLJSON(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected 201, got %d", w.Code)
+	}
+
+	var response ShortenResponse
+	err := json.NewDecoder(w.Body).Decode(&response)
+	if err != nil {
+		t.Errorf("Failed to decode response: %v", err)
+	}
+
+	if !strings.Contains(response.Result, "http://localhost:8080/") {
+		t.Errorf("Expected shortened URL, got %s", response.Result)
+	}
+}
+
+func TestHandleShortenURLJSON_InvalidJSON(t *testing.T) {
+	cfg := &config.Config{BaseURL: "http://localhost:8080"}
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	service := service.NewURLService(storage, generator, cfg.BaseURL)
+	handler := NewHandler(service)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader("invalid json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleShortenURLJSON(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleShortenURLJSON_EmptyURL(t *testing.T) {
+	cfg := &config.Config{BaseURL: "http://localhost:8080"}
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	service := service.NewURLService(storage, generator, cfg.BaseURL)
+	handler := NewHandler(service)
+
+	requestBody := ShortenRequest{URL: ""}
+	jsonBody, _ := json.Marshal(requestBody)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleShortenURLJSON(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", w.Code)
