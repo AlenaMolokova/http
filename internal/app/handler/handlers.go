@@ -133,3 +133,16 @@ func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
+
+func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
+	err :=h.service.Ping()
+	if err !=nil {
+		logrus.WithError(err).Error("Database ping failed")
+		http.Error(w, "Database connection error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Database connection is OK"))
+
+}

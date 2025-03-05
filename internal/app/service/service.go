@@ -7,11 +7,13 @@ import (
 type URLStorage interface {
 	Save(shortID, originalURL string) error
 	Get(shortID string) (string, bool)
+	Ping() error
 }
 
 type URLService interface {
 	ShortenURL(originalURL string) (string, error)
 	GetOriginalURL(shortID string) (string, bool)
+	Ping() error
 }
 
 type service struct {
@@ -38,4 +40,7 @@ func (s *service) ShortenURL(originalURL string) (string, error) {
 
 func (s *service) GetOriginalURL(shortID string) (string, bool) {
 	return s.storage.Get(shortID)
+}
+func (s *service) Ping() error{
+	return s.storage.Ping()
 }
