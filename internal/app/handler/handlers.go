@@ -137,6 +137,13 @@ func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	err :=h.service.Ping()
 	if err !=nil {
+		if err.Error() == "file storage does not support database connection check" || 
+		err.Error() == "memory storage does not support database connection check" {
+		 w.WriteHeader(http.StatusOK)
+		 w.Write([]byte("Storage does not require database connection"))
+		 return
+	 }
+
 		logrus.WithError(err).Error("Database ping failed")
 		http.Error(w, "Database connection error", http.StatusInternalServerError)
 		return

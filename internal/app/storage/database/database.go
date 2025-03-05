@@ -48,7 +48,7 @@ func createTables(db *sql.DB) error {
 			original_url TEXT NOT NULL,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 			last_accessed_at TIMESTAMP WITH TIME ZONE 
-		),
+		);
 
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_original_url 
 		ON url_storage(original_url);
