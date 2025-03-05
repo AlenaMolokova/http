@@ -3,6 +3,7 @@ package file
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -83,6 +84,10 @@ func (s *FileStorage) Get(shortID string) (string, bool) {
 		"found":   ok,
 	}).Info("Storage lookup")
 	return url, ok
+}
+
+func (s *FileStorage) Ping() error {
+	return errors.New("file storage does not support database connection check")
 }
 
 func (s *FileStorage) loadFromFile() error {

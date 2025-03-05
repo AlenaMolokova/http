@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -34,4 +35,8 @@ func (s *MemoryStorage) Get(shortID string) (string, bool) {
 		"found":   ok,
 	}).Info("Storage lookup")
 	return url, ok
+}
+
+func (s *MemoryStorage) Ping() error {
+	return errors.New("memory storage does not support database connection check")
 }
