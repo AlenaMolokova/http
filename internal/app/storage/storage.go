@@ -10,23 +10,21 @@ import (
 func InitStorage(databaseDSN, fileStoragePath string) (URLStorage, error) {
 	
 	if databaseDSN != "" {
-		dbStorage, err := database.NewDBStorage(databaseDSN)
-		if err != nil {
-			logrus.WithError(err).Error("Не удалось инициализировать хранилище в БД")
-		} else {
-			logrus.Info("Используется хранилище в базе данных PostgreSQL")
+		dbStorage, err := database.NewPostgresStorage(databaseDSN)
+		if err == nil {
+			logrus.Info("Используется хранилище PostgreSQL")
 			return dbStorage, nil
 		}
+		logrus.WithError(err).Warn("Не удалось использовать PostgreSQL")
 	}
 
 	if fileStoragePath != "" {
 		fileStorage, err := file.NewFileStorage(fileStoragePath)
-		if err != nil {
-			logrus.WithError(err).Error("Не удалось инициализировать файловое хранилище")
-		} else {
+		if err == nil {
 			logrus.WithField("file", fileStoragePath).Info("Используется файловое хранилище")
 			return fileStorage, nil
 		}
+		logrus.WithError(err).Warn("Не удалось использовать файловое хранилище")
 	}
 
 	logrus.Info("Используется хранилище в памяти")
