@@ -16,11 +16,11 @@ type PostgresStorage struct {
 }
 
 func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
-	if dsn =="" {
+	if dsn == "" {
 		return nil, errors.New("пустая строка подключения к базе данных")
 	}
 
-	db, err := sql.Open("postgres",dsn)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка открытия соединения с базой данных: %v", err)
 	}
@@ -32,7 +32,7 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 		db.Close()
 		return nil, fmt.Errorf("ошибка подключения к базе данных: %v", err)
 	}
-	if err := createTables(db); err != nil{
+	if err := createTables(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ошибка создания таблиц: %v", err)
 	}
@@ -42,7 +42,7 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 }
 
 func createTables(db *sql.DB) error {
-	_,err :=db.Exec(`
+	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS url_storage (
 			short_id TEXT PRIMARY KEY,
 			original_url TEXT NOT NULL,
@@ -53,7 +53,7 @@ func createTables(db *sql.DB) error {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_original_url 
 		ON url_storage(original_url);
 	`)
-	if err !=nil {
+	if err != nil {
 		return fmt.Errorf("ошибка при создании таблицы: %v", err)
 	}
 
@@ -65,20 +65,20 @@ func (s *PostgresStorage) Save(shortID, originalURL string) error {
 		INSERT INTO url_storage (short_id, original_url) 
 		VALUES ($1, $2) 
 		ON CONFLICT (short_id) DO NOTHING
-	`	
-	_, err :=s.db.Exec(query,shortID,originalURL)
+	`
+	_, err := s.db.Exec(query, shortID, originalURL)
 	return err
 }
 
 func (s *PostgresStorage) Get(shortID string) (string, bool) {
-	var originalURL string 
+	var originalURL string
 	query := `
 		SELECT original_url 
 		FROM url_storage 
 		WHERE short_id = $1 
 	`
 
-	err :=s.db.QueryRow(query, shortID).Scan(&originalURL)
+	err := s.db.QueryRow(query, shortID).Scan(&originalURL)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -87,7 +87,7 @@ func (s *PostgresStorage) Get(shortID string) (string, bool) {
 		logrus.WithError(err).Error("Ошибка получения URL")
 		return "", false
 	}
-	
+
 	return originalURL, true
 }
 
@@ -99,4 +99,34 @@ func (s *PostgresStorage) Ping() error {
 
 func (s *PostgresStorage) Close() error {
 	return s.db.Close()
+}
+
+func (s *PostgresStorage) SaveBatch(items map[string]string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("ошибка при начале транзакции: %v", err)
+	}
+
+	query := `
+        INSERT INTO url_storage (short_id, original_url) 
+        VALUES ($1, $2) 
+        ON CONFLICT (short_id) DO NOTHING
+    `
+
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("ошибка при подготовке запроса: %v", err)
+	}
+	defer stmt.Close()
+
+	for shortID, originalURL := range items {
+		_, err := stmt.Exec(shortID, originalURL)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("ошибка при выполнении запроса: %v", err)
+		}
+	}
+
+	return tx.Commit()
 }

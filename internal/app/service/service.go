@@ -2,6 +2,7 @@ package service
 
 import (
     "github.com/AlenaMolokova/http/internal/app/generator"
+	"github.com/AlenaMolokova/http/internal/app/models"
 )
 
 type URLStorage interface {
@@ -12,6 +13,7 @@ type URLStorage interface {
 
 type URLService interface {
 	ShortenURL(originalURL string) (string, error)
+	ShortenBatch(items []models.BatchShortenRequest) ([]models.BatchShortenResponse, error)
 	GetOriginalURL(shortID string) (string, bool)
 	Ping() error
 }
@@ -41,6 +43,25 @@ func (s *service) ShortenURL(originalURL string) (string, error) {
 func (s *service) GetOriginalURL(shortID string) (string, bool) {
 	return s.storage.Get(shortID)
 }
+
 func (s *service) Ping() error{
 	return s.storage.Ping()
+}
+
+func (s *service) ShortenBatch(items []models.BatchShortenRequest) ([]models.BatchShortenResponse, error) {
+    var result []models.BatchShortenResponse
+    
+    for _, item := range items {
+        shortID := s.generator.Generate()
+        if err := s.storage.Save(shortID, item.OriginalURL); err != nil {
+            return nil, err
+        }
+        
+        result = append(result, models.BatchShortenResponse{
+            CorrelationID: item.CorrelationID,
+            ShortURL:      s.baseURL + "/" + shortID,
+        })
+    }
+    
+    return result, nil
 }
