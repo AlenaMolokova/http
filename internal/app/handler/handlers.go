@@ -6,7 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
+	
+	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
@@ -61,7 +62,7 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
-	var req ShortenRequest
+	var req models.ShortenRequest
 
 	if r.Body == nil {
 		http.Error(w, "Empty request body", http.StatusBadRequest)
@@ -100,7 +101,7 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := ShortenResponse{
+	resp := models.ShortenResponse{
 		Result: shortURL,
 	}
 
@@ -153,3 +154,56 @@ func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Database connection is OK"))
 
 }
+
+func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
+    var req []models.BatchShortenRequest
+    
+    if r.Body == nil {
+        http.Error(w, "Empty request body", http.StatusBadRequest)
+        return
+    }
+    defer r.Body.Close()
+    
+    w.Header().Set("Content-Type", "application/json")
+    
+    err := json.NewDecoder(r.Body).Decode(&req)
+    if err != nil {
+        logrus.WithError(err).Error("Invalid JSON format")
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
+        return
+    }
+    
+    if len(req) == 0 {
+        w.WriteHeader(http.StatusBadRequest)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"})
+        return
+    }
+    
+    for _, item := range req {
+        if item.OriginalURL == "" {
+            w.WriteHeader(http.StatusBadRequest)
+            json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
+            return
+        }
+        
+        if _, err := url.Parse(item.OriginalURL); err != nil {
+            logrus.WithError(err).Error("Invalid URL format")
+            w.WriteHeader(http.StatusBadRequest)
+            json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
+            return
+        }
+    }
+    
+    resp, err := h.service.ShortenBatch(req)
+    if err != nil {
+        logrus.WithError(err).Error("Failed to shorten batch")
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"})
+        return
+    }
+    
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(resp)
+}
+

@@ -33,6 +33,7 @@ func InitStorage(databaseDSN, fileStoragePath string) (URLStorage, error) {
 
 type URLStorage interface {
 	Save(shortID, originalURL string) error
+	SaveBatch(items map[string]string) error
 	Get(shortID string) (string, bool)
 	Ping() error
 }

@@ -40,3 +40,14 @@ func (s *MemoryStorage) Get(shortID string) (string, bool) {
 func (s *MemoryStorage) Ping() error {
 	return errors.New("memory storage does not support database connection check")
 }
+
+func (s *MemoryStorage) SaveBatch(items map[string]string) error {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    for shortID, originalURL := range items {
+        s.urls[shortID] = originalURL
+    }
+    
+    return nil
+}

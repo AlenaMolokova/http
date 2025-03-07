@@ -191,3 +191,67 @@ func TestHandleRedirect_NotFound(t *testing.T) {
 		t.Errorf("Expected 400, got %d", w.Code)
 	}
 }
+
+func TestHandleBatchShortenURL_Success(t *testing.T) {
+	cfg := &config.Config{BaseURL: "http://localhost:8080"}
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	service := service.NewURLService(storage, generator, cfg.BaseURL)
+	handler := NewHandler(service)
+
+	requestBatch := []BatchShortenRequest{
+		{CorrelationID: "1", OriginalURL: "https://example1.com"},
+		{CorrelationID: "2", OriginalURL: "https://example2.com"},
+	}
+	jsonBody, _ := json.Marshal(requestBatch)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/shorten/batch", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleBatchShortenURL(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("Expected 201, got %d", w.Code)
+	}
+
+	var response []BatchShortenResponse
+	err := json.NewDecoder(w.Body).Decode(&response)
+	if err != nil {
+		t.Errorf("Failed to decode response: %v", err)
+	}
+
+	if len(response) != 2 {
+		t.Errorf("Expected 2 items in response, got %d", len(response))
+	}
+
+	for _, item := range response {
+		if item.CorrelationID != "1" && item.CorrelationID != "2" {
+			t.Errorf("Unexpected correlation_id: %s", item.CorrelationID)
+		}
+		if !strings.Contains(item.ShortURL, "http://localhost:8080/") {
+			t.Errorf("Expected shortened URL, got %s", item.ShortURL)
+		}
+	}
+}
+
+func TestHandleBatchShortenURL_EmptyBatch(t *testing.T) {
+	cfg := &config.Config{BaseURL: "http://localhost:8080"}
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	service := service.NewURLService(storage, generator, cfg.BaseURL)
+	handler := NewHandler(service)
+
+	requestBatch := []BatchShortenRequest{}
+	jsonBody, _ := json.Marshal(requestBatch)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/shorten/batch", bytes.NewBuffer(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	handler.HandleBatchShortenURL(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400, got %d", w.Code)
+	}
+}

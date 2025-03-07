@@ -124,3 +124,37 @@ func (s *FileStorage) loadFromFile() error {
 	logrus.WithField("count", len(s.urls)).Info("Загружены URL из файла")
 	return nil
 }
+
+func (s *FileStorage) SaveBatch(items map[string]string) error {
+    s.mu.Lock()
+    defer s.mu.Unlock()
+    
+    file, err := os.OpenFile(s.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err != nil {
+        return fmt.Errorf("не удалось открыть файл: %v", err)
+    }
+    defer file.Close()
+    
+    for shortID, originalURL := range items {
+        s.urls[shortID] = originalURL
+        
+        record := URLRecord{
+            UUID:        fmt.Sprintf("%d", s.nextID),
+            ShortURL:    shortID,
+            OriginalURL: originalURL,
+        }
+        s.nextID++
+        
+        data, err := json.Marshal(record)
+        if err != nil {
+            return fmt.Errorf("не удалось сериализовать запись: %v", err)
+        }
+        
+        if _, err := file.Write(append(data, '\n')); err != nil {
+            return fmt.Errorf("не удалось записать в файл: %v", err)
+        }
+    }
+    
+    return nil
+}
+
