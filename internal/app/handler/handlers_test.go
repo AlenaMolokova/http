@@ -12,6 +12,7 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/AlenaMolokova/http/internal/app/storage/memory"
+	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/gorilla/mux"
 )
 
@@ -81,7 +82,7 @@ func TestHandleShortenURLJSON_Success(t *testing.T) {
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
-	requestBody := ShortenRequest{URL: "https://example.com"}
+	requestBody := models.ShortenRequest{URL: "https://example.com"}
 	jsonBody, _ := json.Marshal(requestBody)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(jsonBody))
@@ -94,7 +95,7 @@ func TestHandleShortenURLJSON_Success(t *testing.T) {
 		t.Errorf("Expected 201, got %d", w.Code)
 	}
 
-	var response ShortenResponse
+	var response models.ShortenResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)
@@ -130,7 +131,7 @@ func TestHandleShortenURLJSON_EmptyURL(t *testing.T) {
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
-	requestBody := ShortenRequest{URL: ""}
+	requestBody := models.ShortenRequest{URL: ""}
 	jsonBody, _ := json.Marshal(requestBody)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(jsonBody))
@@ -199,7 +200,7 @@ func TestHandleBatchShortenURL_Success(t *testing.T) {
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
-	requestBatch := []BatchShortenRequest{
+	requestBatch := []models.BatchShortenRequest{
 		{CorrelationID: "1", OriginalURL: "https://example1.com"},
 		{CorrelationID: "2", OriginalURL: "https://example2.com"},
 	}
@@ -215,7 +216,7 @@ func TestHandleBatchShortenURL_Success(t *testing.T) {
 		t.Errorf("Expected 201, got %d", w.Code)
 	}
 
-	var response []BatchShortenResponse
+	var response []models.BatchShortenResponse
 	err := json.NewDecoder(w.Body).Decode(&response)
 	if err != nil {
 		t.Errorf("Failed to decode response: %v", err)
@@ -242,7 +243,7 @@ func TestHandleBatchShortenURL_EmptyBatch(t *testing.T) {
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
-	requestBatch := []BatchShortenRequest{}
+	requestBatch := []models.BatchShortenRequest{}
 	jsonBody, _ := json.Marshal(requestBatch)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten/batch", bytes.NewBuffer(jsonBody))
