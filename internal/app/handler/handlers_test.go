@@ -82,6 +82,7 @@ func TestHandleShortenURLJSON_Success(t *testing.T) {
 	service := service.NewURLService(storage, generator, cfg.BaseURL)
 	handler := NewHandler(service)
 
+	
 	requestBody := models.ShortenRequest{URL: "https://example.com"}
 	jsonBody, _ := json.Marshal(requestBody)
 
