@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
     "github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/models"
 )
@@ -8,6 +9,7 @@ import (
 type URLStorage interface {
 	Save(shortID, originalURL string) error
 	Get(shortID string) (string, bool)
+	FindByOriginalURL(originalURL string) (string, error)
 	Ping() error
 }
 
@@ -33,7 +35,12 @@ func NewURLService(storage URLStorage, generator generator.Generator, baseURL st
 }
 
 func (s *service) ShortenURL(originalURL string) (string, error) {
-	shortID := s.generator.Generate()
+	shortID, err := s.storage.FindByOriginalURL(originalURL)
+	if err ==nil {
+		return s.baseURL + "/" + shortID, errors.New("url already exists")
+	}
+
+	shortID = s.generator.Generate()
 	if err := s.storage.Save(shortID, originalURL); err != nil {
 		return "", err
 	}

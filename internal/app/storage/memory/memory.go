@@ -51,3 +51,16 @@ func (s *MemoryStorage) SaveBatch(items map[string]string) error {
     
     return nil
 }
+
+func (s *MemoryStorage) FindByOriginalURL(originalURL string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for shortID, url :=range s.urls{
+		if url == originalURL{
+			return shortID, nil
+		}
+	}
+
+	return "", errors.New("url not found")
+}
