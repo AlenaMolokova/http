@@ -35,6 +35,6 @@ type URLStorage interface {
 	Save(shortID, originalURL string) error
 	SaveBatch(items map[string]string) error
 	Get(shortID string) (string, bool)
-	FindByOriginalURL(originalURl string) (string, error)
+	FindByOriginalURL(originalURL string) (string, error)
 	Ping() error
 }
