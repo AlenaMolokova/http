@@ -66,8 +66,22 @@ func (s *PostgresStorage) Save(shortID, originalURL string) error {
 		VALUES ($1, $2) 
 		ON CONFLICT (short_id) DO NOTHING
 	`
-	_, err := s.db.Exec(query, shortID, originalURL)
-	return err
+	result, err := s.db.Exec(query, shortID, originalURL)
+	if err !=nil{
+		return err	
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err!=nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return errors.New("url already exists")
+	}
+
+	return nil
+
 }
 
 func (s *PostgresStorage) Get(shortID string) (string, bool) {
@@ -129,4 +143,19 @@ func (s *PostgresStorage) SaveBatch(items map[string]string) error {
 	}
 
 	return tx.Commit()
+}
+
+func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) {
+	var shortID string
+	query := `
+	Select short_id
+	FROM url_storage
+	WHERE original_url = $1
+	`
+
+	err := s.db.QueryRow(query,originalURL).Scan(&shortID)
+	if err !=nil {
+		return "", err
+	}
+	return shortID, nil
 }
