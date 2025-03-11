@@ -72,7 +72,7 @@ func (s *PostgresStorage) Save(shortID, originalURL string) error {
 func (s *PostgresStorage) Get(shortID string) (string, bool) {
 	var originalURL string
 
-	err := s.db.QueryRow(selectByOriginalURLQuery, shortID).Scan(&originalURL)
+	err := s.db.QueryRow(selectByShortIDQuery, shortID).Scan(&originalURL)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -98,6 +98,9 @@ func (s *PostgresStorage) Close() error {
 func (s *PostgresStorage) SaveBatch(items map[string]string) error {
 	const batchSize = 1000
 	itemCount := len(items)
+
+	var tx *sql.Tx
+	var err error
 
 	if itemCount <= batchSize {
 		tx, err := s.db.Begin()
@@ -125,11 +128,11 @@ func (s *PostgresStorage) SaveBatch(items map[string]string) error {
 				return fmt.Errorf("ошибка при выполнении запроса: %v", err)
 			}
 		}
-		
+
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("ошибка при фиксации транзакции: %v", err)
 		}
-	
+
 		return nil
 	}
 	processed := 0
@@ -139,11 +142,7 @@ func (s *PostgresStorage) SaveBatch(items map[string]string) error {
 		batch[shortID] = originalURL
 		processed++
 
-		var tx *sql.Tx  
-		var err error
-		
 		if len(batch) >= batchSize || processed == itemCount {
-			var err error
 			tx, err = s.db.Begin()
 			if err != nil {
 				return fmt.Errorf("ошибка при начале транзакции: %v", err)
