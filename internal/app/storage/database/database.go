@@ -42,17 +42,7 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 }
 
 func createTables(db *sql.DB) error {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS url_storage (
-			short_id TEXT PRIMARY KEY,
-			original_url TEXT NOT NULL,
-			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-			last_accessed_at TIMESTAMP WITH TIME ZONE 
-		);
-
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_original_url 
-		ON url_storage(original_url);
-	`)
+	_, err := db.Exec(createTableQuery)
 	if err != nil {
 		return fmt.Errorf("ошибка при создании таблицы: %v", err)
 	}
@@ -61,18 +51,13 @@ func createTables(db *sql.DB) error {
 }
 
 func (s *PostgresStorage) Save(shortID, originalURL string) error {
-	query := `
-		INSERT INTO url_storage (short_id, original_url) 
-		VALUES ($1, $2) 
-		ON CONFLICT (short_id) DO NOTHING
-	`
-	result, err := s.db.Exec(query, shortID, originalURL)
-	if err !=nil{
-		return err	
+	result, err := s.db.Exec(insertURLQuery, shortID, originalURL)
+	if err != nil {
+		return err
 	}
 
 	rowsAffected, err := result.RowsAffected()
-	if err!=nil {
+	if err != nil {
 		return err
 	}
 
@@ -86,13 +71,8 @@ func (s *PostgresStorage) Save(shortID, originalURL string) error {
 
 func (s *PostgresStorage) Get(shortID string) (string, bool) {
 	var originalURL string
-	query := `
-		SELECT original_url 
-		FROM url_storage 
-		WHERE short_id = $1 
-	`
 
-	err := s.db.QueryRow(query, shortID).Scan(&originalURL)
+	err := s.db.QueryRow(selectByOriginalURLQuery, shortID).Scan(&originalURL)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -116,46 +96,95 @@ func (s *PostgresStorage) Close() error {
 }
 
 func (s *PostgresStorage) SaveBatch(items map[string]string) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("ошибка при начале транзакции: %v", err)
-	}
+	const batchSize = 1000
+	itemCount := len(items)
 
-	query := `
-        INSERT INTO url_storage (short_id, original_url) 
-        VALUES ($1, $2) 
-        ON CONFLICT (short_id) DO NOTHING
-    `
+	if itemCount <= batchSize {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("ошибка при начале транзакции: %v", err)
+		}
 
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		tx.Rollback()
-		return fmt.Errorf("ошибка при подготовке запроса: %v", err)
-	}
-	defer stmt.Close()
+		defer func() {
+			if err != nil {
+				tx.Rollback()
+			}
+		}()
 
-	for shortID, originalURL := range items {
-		_, err := stmt.Exec(shortID, originalURL)
+		stmt, err := tx.Prepare(insertURLQuery)
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("ошибка при выполнении запроса: %v", err)
+			return fmt.Errorf("ошибка при подготовке запроса: %v", err)
 		}
+		defer stmt.Close()
+
+		for shortID, originalURL := range items {
+			_, err := stmt.Exec(shortID, originalURL)
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("ошибка при выполнении запроса: %v", err)
+			}
+		}
+		
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("ошибка при фиксации транзакции: %v", err)
+		}
+	
+		return nil
+	}
+	processed := 0
+	batch := make(map[string]string)
+
+	for shortID, originalURL := range items {
+		batch[shortID] = originalURL
+		processed++
+
+		var tx *sql.Tx  
+		var err error
+		
+		if len(batch) >= batchSize || processed == itemCount {
+			var err error
+			tx, err = s.db.Begin()
+			if err != nil {
+				return fmt.Errorf("ошибка при начале транзакции: %v", err)
+			}
+		}
+
+		stmt, err := tx.Prepare(insertURLQuery)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("ошибка при подготовке запроса: %v", err)
+		}
+
+		for batchShortID, batchOriginalURL := range batch {
+			_, err := stmt.Exec(batchShortID, batchOriginalURL)
+			if err != nil {
+				stmt.Close()
+				tx.Rollback()
+				return fmt.Errorf("ошибка при выполнении запроса: %v", err)
+			}
+		}
+
+		stmt.Close()
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("ошибка при фиксации транзакции: %v", err)
+		}
+
+		batch = make(map[string]string)
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) {
 	var shortID string
-	query := `
-	Select short_id
-	FROM url_storage
-	WHERE original_url = $1
-	`
 
-	err := s.db.QueryRow(query,originalURL).Scan(&shortID)
-	if err !=nil {
-		return "", err
+	err := s.db.QueryRow(selectByOriginalURLQuery, originalURL).Scan(&shortID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", errors.New("url not found")
+		}
+		return "", fmt.Errorf("ошибка при поиске URL: %v", err)
 	}
 	return shortID, nil
 }
