@@ -7,7 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func InitStorage(databaseDSN, fileStoragePath string) (URLStorage, error) {
+func NewStorage(databaseDSN, fileStoragePath string) (URLStorage, error) {
 	
 	if databaseDSN != "" {
 		dbStorage, err := database.NewPostgresStorage(databaseDSN)

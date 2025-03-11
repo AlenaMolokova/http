@@ -8,6 +8,7 @@ import (
 
 type URLStorage interface {
 	Save(shortID, originalURL string) error
+	SaveBatch(items map[string]string) error
 	Get(shortID string) (string, bool)
 	FindByOriginalURL(originalURL string) (string, error)
 	Ping() error
@@ -57,18 +58,24 @@ func (s *service) Ping() error{
 
 func (s *service) ShortenBatch(items []models.BatchShortenRequest) ([]models.BatchShortenResponse, error) {
     var result []models.BatchShortenResponse
-    
+    batchMap := make(map[string]string)
+	correlationMap := make(map[string]string)
+
     for _, item := range items {
         shortID := s.generator.Generate()
-        if err := s.storage.Save(shortID, item.OriginalURL); err != nil {
-            return nil, err
-        }
-        
-        result = append(result, models.BatchShortenResponse{
-            CorrelationID: item.CorrelationID,
-            ShortURL:      s.baseURL + "/" + shortID,
-        })
+		batchMap[shortID] = item.OriginalURL
+		correlationMap[shortID] = item.CorrelationID
     }
-    
+	
+	if err := s.storage.SaveBatch(batchMap); err != nil {
+		return nil, err
+	}
+
+	for shortID, correlationID := range correlationMap{
+		result = append(result, models.BatchShortenResponse{
+			CorrelationID: correlationID,
+			ShortURL: s.baseURL + "/" + shortID,
+		})
+	}
     return result, nil
 }

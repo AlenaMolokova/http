@@ -19,8 +19,8 @@ func main() {
 
 	cfg := config.NewConfig()
 
-	urlStorage, err := storage.InitStorage(cfg.DatabaseDSN, cfg.FileStoragePath)
-	if err !=nil {
+	urlStorage, err := storage.NewStorage(cfg.DatabaseDSN, cfg.FileStoragePath)
+	if err != nil {
 		logrus.WithError(err).Fatal("Не удалось инициализировать хранилище")
 	}
 
