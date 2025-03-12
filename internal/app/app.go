@@ -18,7 +18,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		return nil, err
 	}
 
-	urlGenerator := generator.NewGenerator()
+	urlGenerator := generator.NewGenerator(8)
 
 	urlService := service.NewURLService(urlStorage, urlGenerator, cfg.BaseURL)
 
