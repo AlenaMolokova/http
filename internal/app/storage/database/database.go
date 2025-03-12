@@ -3,11 +3,13 @@ package database
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
 	"github.com/sirupsen/logrus"
 )
 
@@ -32,7 +34,8 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 		db.Close()
 		return nil, fmt.Errorf("ошибка подключения к базе данных: %v", err)
 	}
-	if err := createTables(db); err != nil {
+
+	if err := applyMigrations(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ошибка создания таблиц: %v", err)
 	}
@@ -41,17 +44,33 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 	return &PostgresStorage{db: db}, nil
 }
 
-func createTables(db *sql.DB) error {
-	_, err := db.Exec(createTableQuery)
-	if err != nil {
-		return fmt.Errorf("ошибка при создании таблицы: %v", err)
+func applyMigrations(db *sql.DB) error {
+	goose.SetBaseFS(embed.FS{})
+
+	if err := goose.SetDialect("postgres"); err !=nil {
+		return err
+	}
+
+	if err := goose.Up(db, "migrations"); err !=nil {
+		return err
 	}
 
 	return nil
 }
 
 func (s *PostgresStorage) Save(shortID, originalURL string) error {
-	result, err := s.db.Exec(insertURLQuery, shortID, originalURL)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("ошибка при начале транзакции: %v", err)
+	}
+
+	defer func()  {
+		if err !=nil {
+			tx.Rollback()
+		}
+	}()
+	
+	result, err := tx.Exec(insertURLQuery, shortID, originalURL)
 	if err != nil {
 		return err
 	}
@@ -65,7 +84,7 @@ func (s *PostgresStorage) Save(shortID, originalURL string) error {
 		return errors.New("url already exists")
 	}
 
-	return nil
+	return tx.Commit()
 
 }
 
@@ -96,83 +115,33 @@ func (s *PostgresStorage) Close() error {
 }
 
 func (s *PostgresStorage) SaveBatch(items map[string]string) error {
-	const batchSize = 1000
-	itemCount := len(items)
-
-	var tx *sql.Tx
-	var err error
-
-	if itemCount <= batchSize {
-		tx, err := s.db.Begin()
+	tx, err := s.db.Begin()
+	if err !=nil {
+		return fmt.Errorf("ошибка при начале транзакции: %v", err)
+	}
+	
+	defer func() {
 		if err != nil {
-			return fmt.Errorf("ошибка при начале транзакции: %v", err)
+			tx.Rollback()
 		}
+	}()
 
-		defer func() {
-			if err != nil {
-				tx.Rollback()
-			}
-		}()
-
-		stmt, err := tx.Prepare(insertURLQuery)
+	stmt, err := tx.Prepare(insertURLQuery)
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("ошибка при подготовке запроса: %v", err)
 		}
 		defer stmt.Close()
 
-		for shortID, originalURL := range items {
-			_, err := stmt.Exec(shortID, originalURL)
-			if err != nil {
-				tx.Rollback()
-				return fmt.Errorf("ошибка при выполнении запроса: %v", err)
-			}
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("ошибка при фиксации транзакции: %v", err)
-		}
-
-		return nil
-	}
-	processed := 0
-	batch := make(map[string]string)
-
 	for shortID, originalURL := range items {
-		batch[shortID] = originalURL
-		processed++
-
-		if len(batch) >= batchSize || processed == itemCount {
-			tx, err = s.db.Begin()
-			if err != nil {
-				return fmt.Errorf("ошибка при начале транзакции: %v", err)
-			}
-		}
-
-		stmt, err := tx.Prepare(insertURLQuery)
+		_, err := stmt.Exec(shortID, originalURL)
 		if err != nil {
-			tx.Rollback()
-			return fmt.Errorf("ошибка при подготовке запроса: %v", err)
+			return fmt.Errorf("ошибка при выполнении запроса: %v", err)
 		}
-
-		for batchShortID, batchOriginalURL := range batch {
-			_, err := stmt.Exec(batchShortID, batchOriginalURL)
-			if err != nil {
-				stmt.Close()
-				tx.Rollback()
-				return fmt.Errorf("ошибка при выполнении запроса: %v", err)
-			}
-		}
-
-		stmt.Close()
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("ошибка при фиксации транзакции: %v", err)
-		}
-
-		batch = make(map[string]string)
 	}
 
-	return nil
+	return tx.Commit()
+	
 }
 
 func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) {
