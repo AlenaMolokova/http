@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
 	"github.com/AlenaMolokova/http/internal/app/config"
@@ -9,13 +8,22 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/handler"
 	"github.com/AlenaMolokova/http/internal/app/router"
 	"github.com/AlenaMolokova/http/internal/app/service"
-	"github.com/AlenaMolokova/http/internal/app/storage/memory"
+	"github.com/AlenaMolokova/http/internal/app/storage"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
+
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetLevel(logrus.InfoLevel)
+
 	cfg := config.NewConfig()
 
-	urlStorage := memory.NewMemoryStorage()
+	urlStorage, err := storage.NewStorage(cfg.DatabaseDSN, cfg.FileStoragePath)
+	if err != nil {
+		logrus.WithError(err).Fatal("Не удалось инициализировать хранилище")
+	}
+
 	urlGenerator := generator.NewGenerator(8)
 	urlService := service.NewURLService(urlStorage, urlGenerator, cfg.BaseURL)
 	urlHandler := handler.NewHandler(urlService)
@@ -25,9 +33,13 @@ func main() {
 		Addr:    cfg.ServerAddress,
 		Handler: urlRouter.InitRoutes(),
 	}
+	logrus.WithFields(logrus.Fields{
+		"address":  cfg.ServerAddress,
+		"base_url": cfg.BaseURL,
+	}).Info("Starting server")
 
-	log.Printf("Starting server on %s\n", cfg.ServerAddress)
 	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
+
 }
