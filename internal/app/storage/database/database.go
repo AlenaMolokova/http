@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"errors"
 	"fmt"
 	"time"
@@ -45,7 +44,6 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 }
 
 func applyMigrations(db *sql.DB) error {
-	goose.SetBaseFS(embed.FS{})
 
 	if err := goose.SetDialect("postgres"); err !=nil {
 		return err
