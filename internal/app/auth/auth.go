@@ -65,7 +65,7 @@ func SetUserIDCookie(w http.ResponseWriter, userID string) {
 	signature := SignData(userID)
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     fmt.Sprintf("%s_id", CookieName),
+		Name:     fmt.Sprintf("%s_%s", CookieName, CookiePartID),
 		Value:    userID,
 		Path:     "/",
 		MaxAge:   CookieMaxAge,
@@ -74,7 +74,7 @@ func SetUserIDCookie(w http.ResponseWriter, userID string) {
 	})
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     fmt.Sprintf("%s_sign", CookieName),
+		Name:     fmt.Sprintf("%s_%s", CookieName, CookiePartSign),
 		Value:    signature,
 		Path:     "/",
 		MaxAge:   CookieMaxAge,
