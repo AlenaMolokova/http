@@ -1,14 +1,14 @@
 package auth
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
-	"context"
-	
+
 	"github.com/google/uuid"
 )
 
@@ -42,7 +42,7 @@ func VerifySignature(data, signature string) bool {
 }
 
 func GetUserIDFromCookie(r *http.Request) (string, error) {
-	parts := make(map[CookiePartKey]string) // Используем пользовательский тип CookiePartKey
+	parts := make(map[CookiePartKey]string)
 	for _, part := range []CookiePartKey{CookiePartID, CookiePartSign} {
 		cookie, err := r.Cookie(fmt.Sprintf("%s_%s", CookieName, part))
 		if err != nil {
@@ -106,12 +106,11 @@ func RequireAuth(next http.HandlerFunc) http.HandlerFunc {
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, err := GetUserIDFromCookie(r)
-		
 		if err != nil {
 			userID = GenerateUserID()
 			SetUserIDCookie(w, userID)
 		}
-		
+
 		ctx := context.WithValue(r.Context(), "userID", userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
