@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS url_storage (
     short_id TEXT PRIMARY KEY,
     original_url TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_accessed_at TIMESTAMP WITH TIME ZONE 
+    last_accessed_at TIMESTAMP WITH TIME ZONE,
     user_id TEXT NOT NULL
 );
 
