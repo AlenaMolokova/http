@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"context"
 	
 	"github.com/google/uuid"
 )
@@ -104,6 +105,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			SetUserIDCookie(w, userID)
 		}
 		
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), "userID", userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

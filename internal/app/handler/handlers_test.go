@@ -158,8 +158,9 @@ func TestHandleRedirect_Success(t *testing.T) {
 
 	shortID := generator.Generate()
 	originalURL := "https://example.com"
-	storage.Save(shortID, originalURL)
-
+	userID := "test-user"
+	storage.Save(shortID, originalURL, userID)
+	
 	req := httptest.NewRequest(http.MethodGet, "/"+shortID, nil)
 	w := httptest.NewRecorder()
 
