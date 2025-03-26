@@ -12,10 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
+type CookiePartKey string
+
+const (
+	CookiePartID   CookiePartKey = "id"
+	CookiePartSign CookiePartKey = "sign"
+)
+
 var SecretKey = []byte("your-secret-key-change-this-in-production")
 
 const (
-	CookieName = "user_id"
+	CookieName   = "user_id"
 	CookieMaxAge = 30 * 24 * 60 * 60
 )
 
@@ -35,8 +42,8 @@ func VerifySignature(data, signature string) bool {
 }
 
 func GetUserIDFromCookie(r *http.Request) (string, error) {
-	parts := make(map[string]string)
-	for _, part := range []string{"id", "sign"} {
+	parts := make(map[CookiePartKey]string) // Используем пользовательский тип CookiePartKey
+	for _, part := range []CookiePartKey{CookiePartID, CookiePartSign} {
 		cookie, err := r.Cookie(fmt.Sprintf("%s_%s", CookieName, part))
 		if err != nil {
 			return "", errors.New("invalid cookie format")
@@ -44,8 +51,8 @@ func GetUserIDFromCookie(r *http.Request) (string, error) {
 		parts[part] = cookie.Value
 	}
 
-	userID := parts["id"]
-	signature := parts["sign"]
+	userID := parts[CookiePartID]
+	signature := parts[CookiePartSign]
 
 	if !VerifySignature(userID, signature) {
 		return "", errors.New("invalid signature")
