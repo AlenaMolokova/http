@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
-
+	
+	"github.com/AlenaMolokova/http/internal/app/models"
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 	"github.com/sirupsen/logrus"
@@ -56,7 +57,7 @@ func applyMigrations(db *sql.DB) error {
 	return nil
 }
 
-func (s *PostgresStorage) Save(shortID, originalURL string) error {
+func (s *PostgresStorage) Save(shortID, originalURL, userID string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %v", err)
@@ -68,7 +69,7 @@ func (s *PostgresStorage) Save(shortID, originalURL string) error {
 		}
 	}()
 	
-	result, err := tx.Exec(insertURLQuery, shortID, originalURL)
+	result, err := tx.Exec(insertURLQuery, shortID, originalURL, userID)
 	if err != nil {
 		return err
 	}
@@ -112,7 +113,7 @@ func (s *PostgresStorage) Close() error {
 	return s.db.Close()
 }
 
-func (s *PostgresStorage) SaveBatch(items map[string]string) error {
+func (s *PostgresStorage) SaveBatch(items map[string]string, userID string) error {
 	tx, err := s.db.Begin()
 	if err !=nil {
 		return fmt.Errorf("ошибка при начале транзакции: %v", err)
@@ -132,7 +133,7 @@ func (s *PostgresStorage) SaveBatch(items map[string]string) error {
 		defer stmt.Close()
 
 	for shortID, originalURL := range items {
-		_, err := stmt.Exec(shortID, originalURL)
+		_, err := stmt.Exec(shortID, originalURL, userID)
 		if err != nil {
 			return fmt.Errorf("ошибка при выполнении запроса: %v", err)
 		}
@@ -153,4 +154,29 @@ func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) 
 		return "", fmt.Errorf("ошибка при поиске URL: %v", err)
 	}
 	return shortID, nil
+}
+
+func (s *PostgresStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
+	rows, err := s.db.Query(selectByUserIDQuery, userID)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка при выполнении запроса: %v", err)
+	}
+	defer rows.Close()
+
+	var urls []models.UserURL
+	
+	for rows.Next() {
+		var url models.UserURL
+		err := rows.Scan(&url.ShortURL, &url.OriginalURL)
+		if err != nil {
+			return nil, fmt.Errorf("ошибка при чтении данных: %v", err)
+		}
+		urls = append(urls, url)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("ошибка при обработке результатов: %v", err)
+	}
+
+	return urls, nil
 }

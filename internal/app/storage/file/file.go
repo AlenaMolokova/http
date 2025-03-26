@@ -8,7 +8,8 @@ import (
 	"os"
 	"sync"
 	"strconv"
-
+	
+	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/sirupsen/logrus"
 )
 
@@ -16,11 +17,12 @@ type URLRecord struct {
 	UUID        string `json:"uuid"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	UserID      string `json:"user_id"`
 }
 
 type FileStorage struct {
 	filename string
-	urls     map[string]string
+	urls     map[string]URLRecord
 	mu       sync.RWMutex
 	nextID   int
 }
@@ -28,7 +30,7 @@ type FileStorage struct {
 func NewFileStorage(filename string) (*FileStorage, error) {
 	storage := &FileStorage{
 		filename: filename,
-		urls:     make(map[string]string),
+		urls:     make(map[string]URLRecord),
 		nextID:   1,
 	}
 
@@ -42,16 +44,21 @@ func NewFileStorage(filename string) (*FileStorage, error) {
 	return storage, nil
 }
 
-func (s *FileStorage) Save(shortID, originalURL string) error {
+func (s *FileStorage) Save(shortID, originalURL, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.urls[shortID] = originalURL
+	s.urls[shortID] = URLRecord{
+		ShortURL:    shortID,
+		OriginalURL: originalURL,
+		UserID:      userID,
+	}
 
 	record := URLRecord{
 		UUID:        fmt.Sprintf("%d", s.nextID),
 		ShortURL:    shortID,
 		OriginalURL: originalURL,
+		UserID:      userID,
 	}
 	s.nextID++
 
@@ -77,13 +84,18 @@ func (s *FileStorage) Get(shortID string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	url, ok := s.urls[shortID]
+	record, ok := s.urls[shortID]
 	logrus.WithFields(logrus.Fields{
 		"shortID": shortID,
-		"url":     url,
+		"url":     record.OriginalURL,
 		"found":   ok,
 	}).Info("Storage lookup")
-	return url, ok
+	
+	if !ok {
+		return "", false
+	}
+	
+	return record.OriginalURL, true
 }
 
 func (s *FileStorage) Ping() error {
@@ -107,7 +119,7 @@ func (s *FileStorage) loadFromFile() error {
 			return fmt.Errorf("ошибка при десериализации строки: %v", err)
 		}
 
-		s.urls[record.ShortURL] = record.OriginalURL
+		s.urls[record.ShortURL] = record
 
 		id, err := strconv.Atoi(record.UUID)
 		if err == nil && id > highestID {
@@ -125,7 +137,7 @@ func (s *FileStorage) loadFromFile() error {
 	return nil
 }
 
-func (s *FileStorage) SaveBatch(items map[string]string) error {
+func (s *FileStorage) SaveBatch(items map[string]string, userID string) error {
     s.mu.Lock()
     defer s.mu.Unlock()
     
@@ -136,12 +148,17 @@ func (s *FileStorage) SaveBatch(items map[string]string) error {
     defer file.Close()
     
     for shortID, originalURL := range items {
-        s.urls[shortID] = originalURL
+        s.urls[shortID] = URLRecord{
+            ShortURL:    shortID,
+            OriginalURL: originalURL,
+            UserID:      userID,
+		}
         
         record := URLRecord{
             UUID:        fmt.Sprintf("%d", s.nextID),
             ShortURL:    shortID,
             OriginalURL: originalURL,
+			UserID:      userID,
         }
         s.nextID++
         
@@ -157,12 +174,13 @@ func (s *FileStorage) SaveBatch(items map[string]string) error {
     
     return nil
 }
+
 func (s *FileStorage) FindByOriginalURL(originalURL string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for shortID, url :=range s.urls{
-		if url == originalURL{
+	for shortID, record  :=range s.urls{
+		if record.OriginalURL == originalURL{
 			return shortID, nil
 		}
 	}
@@ -170,3 +188,20 @@ func (s *FileStorage) FindByOriginalURL(originalURL string) (string, error) {
 	return "", errors.New("url not found")
 }
 
+func (s *FileStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	var result []models.UserURL
+	
+	for _, record := range s.urls {
+		if record.UserID == userID {
+			result = append(result, models.UserURL{
+				ShortURL:    record.ShortURL,
+				OriginalURL: record.OriginalURL,
+			})
+		}
+	}
+
+	return result, nil
+}
