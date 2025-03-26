@@ -60,14 +60,15 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.service.ShortenURL(originalURL, userID)
 	if err != nil {
-		if err.Error() == "url with this short_id already exists" {
-			w.Header().Set("Content-Type", "text/plain")
-			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte(shortURL))
-			return
-		}
 		logrus.WithError(err).Error("Failed to shorten URL")
 		http.Error(w, "Failed to shorten URL", http.StatusInternalServerError)
+		return
+	}
+
+	if existingShortID, err := h.service.storage.FindByOriginalURL(originalURL); err == nil && existingShortID != "" {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusConflict) 
+		w.Write([]byte(shortURL))
 		return
 	}
 
@@ -84,7 +85,6 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req models.ShortenRequest
-
 	if r.Body == nil {
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
@@ -116,22 +116,18 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.service.ShortenURL(req.URL, userID)
 	if err != nil {
-		if err.Error() == "url already exists" {
-			resp := models.ShortenResponse{
-				Result: shortURL,
-			}
-			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(resp)
-			return
-		}
 		logrus.WithError(err).Error("Failed to shorten URL")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"})
 		return
 	}
 
-	resp := models.ShortenResponse{
-		Result: shortURL,
+	resp := models.ShortenResponse{Result: shortURL}
+
+	if existingShortID, err := h.service.storage.FindByOriginalURL(req.URL); err == nil && existingShortID != "" {
+		w.WriteHeader(http.StatusConflict) 
+		json.NewEncoder(w).Encode(resp)
+		return
 	}
 
 	w.WriteHeader(http.StatusCreated)

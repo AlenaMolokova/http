@@ -42,7 +42,7 @@ func VerifySignature(data, signature string) bool {
 }
 
 func GetUserIDFromCookie(r *http.Request) (string, error) {
-	parts := make(map[CookiePartKey]string)
+	parts := make(map[CookiePartKey]string) // Используем пользовательский тип
 	for _, part := range []CookiePartKey{CookiePartID, CookiePartSign} {
 		cookie, err := r.Cookie(fmt.Sprintf("%s_%s", CookieName, part))
 		if err != nil {
