@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-
+	"fmt"
+	
+	"github.com/AlenaMolokova/http/internal/app/auth"
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/gorilla/mux"
@@ -24,6 +26,12 @@ func NewHandler(service service.URLService) *Handler {
 }
 
 func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
+	}
+	
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "" && !strings.Contains(contentType, "text/plain") {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
@@ -50,7 +58,7 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.service.ShortenURL(originalURL)
+	shortURL, err := h.service.ShortenURL(originalURL, userID)
 	if err != nil {
 		if err.Error() == "url already exists" {
 			w.Header().Set("Content-Type", "text/plain")
@@ -68,6 +76,12 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
+	}
+
 	var req models.ShortenRequest
 
 	if r.Body == nil {
@@ -78,7 +92,7 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		logrus.WithError(err).Error("Invalid JSON format")
 		w.WriteHeader(http.StatusBadRequest)
@@ -99,7 +113,7 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.service.ShortenURL(req.URL)
+	shortURL, err := h.service.ShortenURL(req.URL, userID)
 	if err != nil {
 		if err.Error() == "url already exists" {
 			resp := models.ShortenResponse{
@@ -209,7 +223,13 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	resp, err := h.service.ShortenBatch(req)
+	userID, err := auth.GetUserIDFromCookie(r)
+    if err != nil {
+        userID = auth.GenerateUserID()
+        auth.SetUserIDCookie(w, userID)
+    }
+	
+	resp, err := h.service.ShortenBatch(req, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten batch")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -219,4 +239,46 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
+}
+
+
+func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	urls, err := h.service.GetUserURLs(userID)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get user URLs")
+		http.Error(w, "Failed to get user URLs", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if len(urls) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	baseURL := getBaseURL(r)
+	for i := range urls {
+		urls[i].ShortURL = baseURL + "/" + urls[i].ShortURL
+	}
+
+	if err := json.NewEncoder(w).Encode(urls); err != nil {
+		logrus.WithError(err).Error("Failed to encode user URLs")
+		http.Error(w, "Failed to encode user URLs", http.StatusInternalServerError)
+		return
+	}
+}
+
+func getBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s", scheme, r.Host)
 }

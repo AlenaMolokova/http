@@ -20,6 +20,17 @@ type BatchShortenResponse struct {
 	ShortURL      string `json:"short_url"`
 }
 
+type UserURL struct {
+	ShortURL string `json:"short_url"`
+	OriginalURL string `json:"original_url"`
+}
+
+type URLWithUser struct {
+	ShortID string
+	OriginalURL string
+	UserID string
+}
+
 func (r ShortenResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Result string `json:"result"`

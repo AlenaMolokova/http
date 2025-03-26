@@ -14,6 +14,7 @@ type URLHandler interface {
 	HandleBatchShortenURL(w http.ResponseWriter, r *http.Request)
 	HandleRedirect(w http.ResponseWriter, r *http.Request)
 	HandlePing(w http.ResponseWriter, r *http.Request)
+	HandleGetUserURLs(w http.ResponseWriter, r *http.Request)
 }
 
 type Router struct {
@@ -35,6 +36,7 @@ func (r *Router) InitRoutes() *mux.Router {
 	router.HandleFunc("/", r.handler.HandleShortenURL).Methods(http.MethodPost)
 	router.HandleFunc("/api/shorten", r.handler.HandleShortenURLJSON).Methods(http.MethodPost)
 	router.HandleFunc("/api/shorten/batch", r.handler.HandleBatchShortenURL).Methods(http.MethodPost)
+	router.HandleFunc("/api/user/urls", r.handler.HandleGetUserURLs).Methods(http.MethodGet)
 	router.HandleFunc("/ping", r.handler.HandlePing).Methods(http.MethodGet)
 	router.HandleFunc("/{id}", r.handler.HandleRedirect).Methods(http.MethodGet)
 
