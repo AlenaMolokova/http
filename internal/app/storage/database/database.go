@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	
+
 	"github.com/AlenaMolokova/http/internal/app/models"
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
@@ -46,11 +46,11 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 
 func applyMigrations(db *sql.DB) error {
 
-	if err := goose.SetDialect("postgres"); err !=nil {
+	if err := goose.SetDialect("postgres"); err != nil {
 		return err
 	}
 
-	if err := goose.Up(db, "migrations"); err !=nil {
+	if err := goose.Up(db, "migrations"); err != nil {
 		return err
 	}
 
@@ -63,27 +63,40 @@ func (s *PostgresStorage) Save(shortID, originalURL, userID string) error {
 		return fmt.Errorf("ошибка при начале транзакции: %v", err)
 	}
 
-	defer func()  {
-		if err !=nil {
+	defer func() {
+		if err != nil {
 			tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+
+		if err != nil {
+			logrus.WithError(err).Error("Ошибка коммита транзакции")
+		} else {
+			logrus.WithFields(logrus.Fields{
+				"short_id":     shortID,
+				"original_url": originalURL,
+				"user_id":      userID,
+			}).Info("URL успешно сохранён в базе данных")
 		}
 	}()
-	
+
 	result, err := tx.Exec(insertURLQuery, shortID, originalURL, userID)
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка при выполнении запроса: %v", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return fmt.Errorf("ошибка при проверке затронутых строк: %v", err)
 	}
 
 	if rowsAffected == 0 {
-		return errors.New("url already exists")
+		logrus.WithField("short_id", shortID).Warn("URL с таким short_id уже существует")
+		return errors.New("url with this short_id already exists")
 	}
 
-	return tx.Commit()
+	return nil
 
 }
 
@@ -115,10 +128,10 @@ func (s *PostgresStorage) Close() error {
 
 func (s *PostgresStorage) SaveBatch(items map[string]string, userID string) error {
 	tx, err := s.db.Begin()
-	if err !=nil {
+	if err != nil {
 		return fmt.Errorf("ошибка при начале транзакции: %v", err)
 	}
-	
+
 	defer func() {
 		if err != nil {
 			tx.Rollback()
@@ -126,11 +139,11 @@ func (s *PostgresStorage) SaveBatch(items map[string]string, userID string) erro
 	}()
 
 	stmt, err := tx.Prepare(insertURLQuery)
-		if err != nil {
-			tx.Rollback()
-			return fmt.Errorf("ошибка при подготовке запроса: %v", err)
-		}
-		defer stmt.Close()
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("ошибка при подготовке запроса: %v", err)
+	}
+	defer stmt.Close()
 
 	for shortID, originalURL := range items {
 		_, err := stmt.Exec(shortID, originalURL, userID)
@@ -140,7 +153,7 @@ func (s *PostgresStorage) SaveBatch(items map[string]string, userID string) erro
 	}
 
 	return tx.Commit()
-	
+
 }
 
 func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) {
@@ -164,7 +177,7 @@ func (s *PostgresStorage) GetURLsByUserID(userID string) ([]models.UserURL, erro
 	defer rows.Close()
 
 	var urls []models.UserURL
-	
+
 	for rows.Next() {
 		var url models.UserURL
 		err := rows.Scan(&url.ShortURL, &url.OriginalURL)
