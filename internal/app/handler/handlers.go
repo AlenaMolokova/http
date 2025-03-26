@@ -60,12 +60,13 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.service.ShortenURL(originalURL, userID)
 	if err != nil {
-		if err.Error() == "url already exists" {
+		if err.Error() == "url with this short_id already exists" {
 			w.Header().Set("Content-Type", "text/plain")
 			w.WriteHeader(http.StatusConflict)
 			w.Write([]byte(shortURL))
 			return
 		}
+		logrus.WithError(err).Error("Failed to shorten URL")
 		http.Error(w, "Failed to shorten URL", http.StatusInternalServerError)
 		return
 	}
@@ -228,7 +229,7 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
         userID = auth.GenerateUserID()
         auth.SetUserIDCookie(w, userID)
     }
-	
+
 	resp, err := h.service.ShortenBatch(req, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten batch")
