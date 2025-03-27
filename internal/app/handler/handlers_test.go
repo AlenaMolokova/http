@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"context"
 
 	"github.com/AlenaMolokova/http/internal/app/config"
 	"github.com/AlenaMolokova/http/internal/app/generator"
@@ -24,6 +25,7 @@ func TestHandleShortenURL_Success(t *testing.T) {
 	handler := NewHandler(service)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com"))
+	req = req.WithContext(context.WithValue(req.Context(), baseURLKey{}, cfg.BaseURL))
 	req.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
 
@@ -34,8 +36,8 @@ func TestHandleShortenURL_Success(t *testing.T) {
 	}
 
 	responseBody := w.Body.String()
-	if !strings.Contains(responseBody, "http://localhost:8080/") {
-		t.Errorf("Expected shortened URL, got %s", responseBody)
+	if !strings.Contains(responseBody, cfg.BaseURL+"/") {
+		t.Errorf("Expected shortened URL starting with %s, got %s", cfg.BaseURL, responseBody)
 	}
 }
 
@@ -87,6 +89,7 @@ func TestHandleShortenURLJSON_Success(t *testing.T) {
 	jsonBody, _ := json.Marshal(requestBody)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(jsonBody))
+	req = req.WithContext(context.WithValue(req.Context(), baseURLKey{}, cfg.BaseURL))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
