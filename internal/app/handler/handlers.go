@@ -65,13 +65,6 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if existingShortID, err := h.service.FindByOriginalURL(originalURL); err == nil && existingShortID != "" {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusConflict) 
-		w.Write([]byte(shortURL))
-		return
-	}
-
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(shortURL))
