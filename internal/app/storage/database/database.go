@@ -171,22 +171,29 @@ func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) 
 }
 
 func (s *PostgresStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
-	rows, err := s.db.Query(selectByUserIDQuery, userID)
+	var rows *sql.Rows
+    var err error
+    if userID == "" {
+        rows, err = s.db.Query("SELECT short_id, original_url, is_deleted FROM url_storage")
+    } else {
+        rows, err = s.db.Query("SELECT short_id, original_url, is_deleted FROM url_storage WHERE user_id = $1", userID)
+    }
     if err != nil {
-        return nil, fmt.Errorf("ошибка при выполнении запроса: %v", err)
+        logrus.WithError(err).Error("Failed to query URLs by user ID")
+        return nil, err
     }
     defer rows.Close()
 
     var urls []models.UserURL
     for rows.Next() {
         var url models.UserURL
-        err := rows.Scan(&url.ShortURL, &url.OriginalURL, &url.IsDeleted)
-        if err != nil {
-            return nil, fmt.Errorf("ошибка при чтении данных: %v", err)
+        if err := rows.Scan(&url.ShortURL, &url.OriginalURL, &url.IsDeleted); err != nil {
+            logrus.WithError(err).Error("Failed to scan URL row")
+            return nil, err
         }
         urls = append(urls, url)
     }
-    return urls, rows.Err()
+    return urls, nil
 }
 
 func (s *PostgresStorage) MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error) {
