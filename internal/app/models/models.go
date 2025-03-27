@@ -23,6 +23,7 @@ type BatchShortenResponse struct {
 type UserURL struct {
 	ShortURL string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+	IsDeleted   bool   `json:"is_deleted,omitempty"`
 }
 
 type URLWithUser struct {

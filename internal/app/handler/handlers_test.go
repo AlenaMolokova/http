@@ -196,6 +196,10 @@ func TestHandleRedirect_NotFound(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400, got %d", w.Code)
 	}
+
+	if w.Code != http.StatusGone && w.Code != http.StatusBadRequest {
+        t.Errorf("Expected 410 or 400, got %d", w.Code)
+    }
 }
 
 func TestHandleBatchShortenURL_Success(t *testing.T) {

@@ -39,4 +39,5 @@ type URLStorage interface {
 	FindByOriginalURL(originalURL string) (string, error)
 	GetURLsByUserID(userID string) ([]models.UserURL, error)
 	Ping() error
+	MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error)
 }

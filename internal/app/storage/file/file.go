@@ -18,6 +18,7 @@ type URLRecord struct {
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
 	UserID      string `json:"user_id"`
+	IsDeleted   bool   `json:"is_deleted,omitempty"`
 }
 
 type FileStorage struct {
@@ -138,41 +139,43 @@ func (s *FileStorage) loadFromFile() error {
 }
 
 func (s *FileStorage) SaveBatch(items map[string]string, userID string) error {
-    s.mu.Lock()
-    defer s.mu.Unlock()
-    
-    file, err := os.OpenFile(s.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-    if err != nil {
-        return fmt.Errorf("не удалось открыть файл: %v", err)
-    }
-    defer file.Close()
-    
-    for shortID, originalURL := range items {
-        s.urls[shortID] = URLRecord{
-            ShortURL:    shortID,
-            OriginalURL: originalURL,
-            UserID:      userID,
-		}
-        
-        record := URLRecord{
-            UUID:        fmt.Sprintf("%d", s.nextID),
-            ShortURL:    shortID,
-            OriginalURL: originalURL,
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	file, err := os.OpenFile(s.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("не удалось открыть файл: %v", err)
+	}
+	defer file.Close()
+
+	for shortID, originalURL := range items {
+		s.urls[shortID] = URLRecord{
+			ShortURL:    shortID,
+			OriginalURL: originalURL,
 			UserID:      userID,
-        }
-        s.nextID++
-        
-        data, err := json.Marshal(record)
-        if err != nil {
-            return fmt.Errorf("не удалось сериализовать запись: %v", err)
-        }
-        
-        if _, err := file.Write(append(data, '\n')); err != nil {
-            return fmt.Errorf("не удалось записать в файл: %v", err)
-        }
-    }
-    
-    return nil
+			IsDeleted:   false,
+		}
+
+		record := URLRecord{
+			UUID:        fmt.Sprintf("%d", s.nextID),
+			ShortURL:    shortID,
+			OriginalURL: originalURL,
+			UserID:      userID,
+			IsDeleted:   false,
+		}
+		s.nextID++
+
+		data, err := json.Marshal(record)
+		if err != nil {
+			return fmt.Errorf("не удалось сериализовать запись: %v", err)
+		}
+
+		if _, err := file.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("не удалось записать в файл: %v", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *FileStorage) FindByOriginalURL(originalURL string) (string, error) {
@@ -204,4 +207,42 @@ func (s *FileStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
 	}
 
 	return result, nil
+}
+
+func (s *FileStorage) MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var rowsAffected int64
+
+	for _, shortID := range shortIDs {
+		if record, ok := s.urls[shortID]; ok && record.UserID == userID {
+			record.IsDeleted = true
+			s.urls[shortID] = record
+			rowsAffected++
+		}
+	}
+
+	file, err := os.Create(s.filename)
+	if err != nil {
+		return 0, fmt.Errorf("не удалось открыть файл для записи: %v", err)
+	}
+	defer file.Close()
+
+	for _, record := range s.urls {
+		data, err := json.Marshal(record)
+		if err != nil {
+			return 0, fmt.Errorf("не удалось сериализовать запись: %v", err)
+		}
+		if _, err := file.Write(append(data, '\n')); err != nil {
+			return 0, fmt.Errorf("не удалось записать в файл: %v", err)
+		}
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"short_ids":     shortIDs,
+		"user_id":       userID,
+		"rows_affected": rowsAffected,
+	}).Info("URLs marked as deleted in file storage")
+	return rowsAffected, nil
 }
