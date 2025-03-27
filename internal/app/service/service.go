@@ -23,6 +23,7 @@ type URLService interface {
 	GetURLsByUserID(userID string) ([]models.UserURL, error)
 	Ping() error
 	GetUserURLs(userID string) ([]models.UserURL, error)
+	FindByOriginalURL(originalURL string) (string, error)
 }
 
 type service struct {
@@ -102,4 +103,7 @@ func (s *service) GetURLsByUserID(userID string) ([]models.UserURL, error) {
 	return urls, nil
 }
 
+func (s *service) FindByOriginalURL(originalURL string) (string, error) { 
+	return s.storage.FindByOriginalURL(originalURL)
+}
 
