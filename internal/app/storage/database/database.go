@@ -193,6 +193,12 @@ func (s *PostgresStorage) GetURLsByUserID(userID string) ([]models.UserURL, erro
         }
         urls = append(urls, url)
     }
+
+    if err := rows.Err(); err != nil {
+        logrus.WithError(err).Error("Error occurred during rows iteration")
+        return nil, err
+    }
+
     return urls, nil
 }
 
