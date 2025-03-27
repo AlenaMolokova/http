@@ -117,12 +117,6 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 	resp := models.ShortenResponse{Result: shortURL}
 
-	if existingShortID, err := h.service.FindByOriginalURL(req.URL); err == nil && existingShortID != "" {
-		w.WriteHeader(http.StatusConflict) 
-		json.NewEncoder(w).Encode(resp)
-		return
-	}
-
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
 }
