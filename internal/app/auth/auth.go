@@ -14,9 +14,15 @@ import (
 
 type CookiePartKey string
 
+type ContextKey string
+
 const (
 	CookiePartID   CookiePartKey = "id"
 	CookiePartSign CookiePartKey = "sign"
+)
+
+const (
+	UserIDKey ContextKey = "userID"
 )
 
 var SecretKey = []byte("your-secret-key-change-this-in-production")
@@ -42,7 +48,7 @@ func VerifySignature(data, signature string) bool {
 }
 
 func GetUserIDFromCookie(r *http.Request) (string, error) {
-	parts := make(map[CookiePartKey]string) // Используем пользовательский тип
+	parts := make(map[CookiePartKey]string) 
 	for _, part := range []CookiePartKey{CookiePartID, CookiePartSign} {
 		cookie, err := r.Cookie(fmt.Sprintf("%s_%s", CookieName, part))
 		if err != nil {
@@ -111,7 +117,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			SetUserIDCookie(w, userID)
 		}
 
-		ctx := context.WithValue(r.Context(), "userID", userID)
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
