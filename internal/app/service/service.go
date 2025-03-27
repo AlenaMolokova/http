@@ -7,6 +7,11 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/models"
 )
 
+type ShortenResult struct {
+    ShortURL string
+    IsNew    bool
+}
+
 type URLStorage interface {
 	Save(shortID, originalURL, userID string) error
 	SaveBatch(items map[string]string, userID string) error
@@ -17,7 +22,7 @@ type URLStorage interface {
 }
 
 type URLService interface {
-	ShortenURL(originalURL, userID string) (string, error)
+	ShortenURL(originalURL, userID string) (ShortenResult, error)
 	ShortenBatch(items []models.BatchShortenRequest, userID string) ([]models.BatchShortenResponse, error)
 	GetOriginalURL(shortID string) (string, bool)
 	GetURLsByUserID(userID string) ([]models.UserURL, error)
@@ -32,26 +37,31 @@ type service struct {
 	baseURL   string
 }
 
+func (s *service) ShortenURL(originalURL, userID string) (ShortenResult, error) {
+	existingShortID, err := s.storage.FindByOriginalURL(originalURL)
+	if err == nil && existingShortID != "" {
+		return ShortenResult{
+			ShortURL: fmt.Sprintf("%s/%s", s.baseURL, existingShortID),
+			IsNew:    false,
+		}, nil
+	}
+
+	shortID := s.generator.Generate()
+	if err := s.storage.Save(shortID, originalURL, userID); err != nil {
+		return ShortenResult{}, fmt.Errorf("ошибка сохранения URL: %w", err)
+	}
+	return ShortenResult{
+		ShortURL: fmt.Sprintf("%s/%s", s.baseURL, shortID),
+		IsNew:    true,
+	}, nil
+}
+
 func NewURLService(storage URLStorage, generator generator.Generator, baseURL string) URLService {
 	return &service{
 		storage:   storage,
 		generator: generator,
 		baseURL:   baseURL,
 	}
-}
-
-func (s *service) ShortenURL(originalURL, userID string) (string, error) {
-	existingShortID, err := s.storage.FindByOriginalURL(originalURL)
-	if err == nil {
-		return fmt.Sprintf("%s/%s", s.baseURL, existingShortID), nil
-	}
-
-	shortID := s.generator.Generate()
-
-	if err := s.storage.Save(shortID, originalURL, userID); err != nil {
-		return "", fmt.Errorf("ошибка сохранения URL: %w", err)
-	}
-	return fmt.Sprintf("%s/%s", s.baseURL, shortID), nil
 }
 
 func (s *service) GetOriginalURL(shortID string) (string, bool) {
@@ -87,7 +97,7 @@ func (s *service) ShortenBatch(items []models.BatchShortenRequest, userID string
 }
 
 func (s *service) GetUserURLs(userID string) ([]models.UserURL, error) {
-    return s.storage.GetURLsByUserID(userID)
+	return s.storage.GetURLsByUserID(userID)
 }
 
 func (s *service) GetURLsByUserID(userID string) ([]models.UserURL, error) {
@@ -103,7 +113,6 @@ func (s *service) GetURLsByUserID(userID string) ([]models.UserURL, error) {
 	return urls, nil
 }
 
-func (s *service) FindByOriginalURL(originalURL string) (string, error) { 
+func (s *service) FindByOriginalURL(originalURL string) (string, error) {
 	return s.storage.FindByOriginalURL(originalURL)
 }
-

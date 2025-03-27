@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"fmt"
-	
+		
 	"github.com/AlenaMolokova/http/internal/app/auth"
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/AlenaMolokova/http/internal/app/service"
@@ -18,6 +18,8 @@ import (
 type Handler struct {
 	service service.URLService
 }
+
+type baseURLKey struct{}
 
 func NewHandler(service service.URLService) *Handler {
 	return &Handler{
@@ -58,7 +60,7 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.service.ShortenURL(originalURL, userID)
+	result, err := h.service.ShortenURL(originalURL, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten URL")
 		http.Error(w, "Failed to shorten URL", http.StatusInternalServerError)
@@ -66,11 +68,12 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	if existingShortID, err := h.service.FindByOriginalURL(originalURL); err == nil && existingShortID != "" {
-		shortURL = fmt.Sprintf("%s/%s", getBaseURL(r), existingShortID) 
+	if result.IsNew {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusConflict)
 	}
-	w.WriteHeader(http.StatusCreated) 
-	w.Write([]byte(shortURL))
+	w.Write([]byte(result.ShortURL))
 }
 
 func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +113,7 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.service.ShortenURL(req.URL, userID)
+	result, err := h.service.ShortenURL(req.URL, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten URL")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -118,11 +121,13 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if existingShortID, err := h.service.FindByOriginalURL(req.URL); err == nil && existingShortID != "" {
-		shortURL = fmt.Sprintf("%s/%s", getBaseURL(r), existingShortID) 
+	resp := models.ShortenResponse{Result: result.ShortURL}
+	if result.IsNew {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusConflict)
 	}
-	w.WriteHeader(http.StatusCreated) 
-	json.NewEncoder(w).Encode(models.ShortenResponse{Result: shortURL})
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
@@ -264,6 +269,10 @@ func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 }
 
 func getBaseURL(r *http.Request) string {
+	if baseURL, ok := r.Context().Value(baseURLKey{}).(string); ok {
+		return baseURL
+	}
+
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
