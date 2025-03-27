@@ -2,12 +2,12 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"fmt"
-		
+
 	"github.com/AlenaMolokova/http/internal/app/auth"
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/AlenaMolokova/http/internal/app/service"
@@ -33,7 +33,7 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 		userID = auth.GenerateUserID()
 		auth.SetUserIDCookie(w, userID)
 	}
-	
+
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "" && !strings.Contains(contentType, "text/plain") {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
@@ -142,12 +142,14 @@ func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 
 	originalURL, found := h.service.GetOriginalURL(id)
 	if !found {
-		urls, err := h.service.GetURLsByUserID("") 
+		urls, err := h.service.GetURLsByUserID("")
 		if err == nil {
+			baseURL := getBaseURL(r)
 			for _, url := range urls {
-				if url.ShortURL == id && url.IsDeleted {
+				shortID := strings.TrimPrefix(url.ShortURL, baseURL+"/")
+				if shortID == id && url.IsDeleted {
 					logrus.WithField("id", id).Warn("URL is deleted")
-					http.Error(w, "Gone", http.StatusGone) 
+					http.Error(w, "Gone", http.StatusGone)
 					return
 				}
 			}
@@ -227,10 +229,10 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 	}
 
 	userID, err := auth.GetUserIDFromCookie(r)
-    if err != nil {
-        userID = auth.GenerateUserID()
-        auth.SetUserIDCookie(w, userID)
-    }
+	if err != nil {
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
+	}
 
 	resp, err := h.service.ShortenBatch(req, userID)
 	if err != nil {
@@ -291,7 +293,7 @@ func getBaseURL(r *http.Request) string {
 }
 
 func (h *Handler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
-    userID, err := auth.GetUserIDFromCookie(r)
+	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		logrus.WithError(err).Warn("No valid cookie found, unauthorized")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)

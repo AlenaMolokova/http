@@ -122,15 +122,17 @@ func (s *service) FindByOriginalURL(originalURL string) (string, error) {
 
 
 func (s *service) DeleteURLs(shortIDs []string, userID string) error {
-	rowsAffected, err := s.storage.MarkURLsAsDeleted(shortIDs, userID)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to mark URLs as deleted")
-		return err
-	}
-	logrus.WithFields(logrus.Fields{
-		"user_id":       userID,
-		"short_ids":     shortIDs,
-		"rows_affected": rowsAffected,
-	}).Info("URLs marked as deleted")
+	go func() {
+        rowsAffected, err := s.storage.MarkURLsAsDeleted(shortIDs, userID)
+        if err != nil {
+            logrus.WithError(err).Error("Failed to mark URLs as deleted in background")
+            return
+        }
+        logrus.WithFields(logrus.Fields{
+            "user_id":       userID,
+            "short_ids":     shortIDs,
+            "rows_affected": rowsAffected,
+        }).Info("URLs marked as deleted")
+    }()
 	return nil
 }
