@@ -5,6 +5,7 @@ import (
 
 	"github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/models"
+	"github.com/sirupsen/logrus"
 )
 
 type ShortenResult struct {
@@ -19,6 +20,7 @@ type URLStorage interface {
 	FindByOriginalURL(originalURL string) (string, error)
 	GetURLsByUserID(userID string) ([]models.UserURL, error)
 	Ping() error
+	MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error)
 }
 
 type URLService interface {
@@ -29,6 +31,7 @@ type URLService interface {
 	Ping() error
 	GetUserURLs(userID string) ([]models.UserURL, error)
 	FindByOriginalURL(originalURL string) (string, error)
+	DeleteURLs(shortIDs []string, userID string) error
 }
 
 type service struct {
@@ -115,4 +118,21 @@ func (s *service) GetURLsByUserID(userID string) ([]models.UserURL, error) {
 
 func (s *service) FindByOriginalURL(originalURL string) (string, error) {
 	return s.storage.FindByOriginalURL(originalURL)
+}
+
+
+func (s *service) DeleteURLs(shortIDs []string, userID string) error {
+    go func() {
+        rowsAffected, err := s.storage.MarkURLsAsDeleted(shortIDs, userID)
+        if err != nil {
+            logrus.WithError(err).Error("Failed to mark URLs as deleted")
+            return
+        }
+        logrus.WithFields(logrus.Fields{
+            "user_id":       userID,
+            "short_ids":     shortIDs,
+            "rows_affected": rowsAffected,
+        }).Info("URLs marked as deleted")
+    }()
+    return nil 
 }

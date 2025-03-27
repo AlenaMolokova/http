@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 	"github.com/sirupsen/logrus"
 )
@@ -102,18 +102,19 @@ func (s *PostgresStorage) Save(shortID, originalURL, userID string) error {
 
 func (s *PostgresStorage) Get(shortID string) (string, bool) {
 	var originalURL string
-
-	err := s.db.QueryRow(selectByShortIDQuery, shortID).Scan(&originalURL)
-
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", false
-		}
-		logrus.WithError(err).Error("Ошибка получения URL")
-		return "", false
+    var isDeleted bool
+    err := s.db.QueryRow(selectByShortIDQuery, shortID).Scan(&originalURL, &isDeleted)
+    if err != nil {
+        if err == sql.ErrNoRows {
+            return "", false
+        }
+        logrus.WithError(err).Error("Ошибка получения URL")
+        return "", false
+    }
+    if isDeleted {
+        return "", false 
 	}
-
-	return originalURL, true
+    return originalURL, true
 }
 
 func (s *PostgresStorage) Ping() error {
@@ -171,25 +172,31 @@ func (s *PostgresStorage) FindByOriginalURL(originalURL string) (string, error) 
 
 func (s *PostgresStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
 	rows, err := s.db.Query(selectByUserIDQuery, userID)
-	if err != nil {
-		return nil, fmt.Errorf("ошибка при выполнении запроса: %v", err)
-	}
-	defer rows.Close()
+    if err != nil {
+        return nil, fmt.Errorf("ошибка при выполнении запроса: %v", err)
+    }
+    defer rows.Close()
 
-	var urls []models.UserURL
+    var urls []models.UserURL
+    for rows.Next() {
+        var url models.UserURL
+        err := rows.Scan(&url.ShortURL, &url.OriginalURL, &url.IsDeleted)
+        if err != nil {
+            return nil, fmt.Errorf("ошибка при чтении данных: %v", err)
+        }
+        urls = append(urls, url)
+    }
+    return urls, rows.Err()
+}
 
-	for rows.Next() {
-		var url models.UserURL
-		err := rows.Scan(&url.ShortURL, &url.OriginalURL)
-		if err != nil {
-			return nil, fmt.Errorf("ошибка при чтении данных: %v", err)
-		}
-		urls = append(urls, url)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("ошибка при обработке результатов: %v", err)
-	}
-
-	return urls, nil
+func (s *PostgresStorage) MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error) {
+    result, err := s.db.Exec(updateDeletedQuery, pq.Array(shortIDs), userID)
+    if err != nil {
+        return 0, fmt.Errorf("ошибка при обновлении флага удаления: %v", err)
+    }
+    rowsAffected, err := result.RowsAffected()
+    if err != nil {
+        return 0, fmt.Errorf("ошибка при получении числа обновлённых строк: %v", err)
+    }
+    return rowsAffected, nil
 }
