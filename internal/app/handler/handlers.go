@@ -132,40 +132,44 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	id := vars["id"]
+    id := vars["id"]
 
-	logrus.WithFields(logrus.Fields{
-		"id":     id,
-		"method": r.Method,
-		"uri":    r.RequestURI,
-	}).Info("Handling redirect request")
+    logrus.WithFields(logrus.Fields{
+        "id":     id,
+        "method": r.Method,
+        "uri":    r.RequestURI,
+    }).Info("Handling redirect request")
 
-	originalURL, found := h.service.GetOriginalURL(id)
-	if !found {
-		urls, err := h.service.GetURLsByUserID("")
-		if err == nil {
-			baseURL := getBaseURL(r)
-			for _, url := range urls {
-				shortID := strings.TrimPrefix(url.ShortURL, baseURL+"/")
-				if shortID == id && url.IsDeleted {
-					logrus.WithField("id", id).Warn("URL is deleted")
-					http.Error(w, "Gone", http.StatusGone)
-					return
-				}
-			}
-		}
-		logrus.WithField("id", id).Warn("URL not found")
-		http.Error(w, "URL not found", http.StatusBadRequest)
-		return
-	}
+    originalURL, found := h.service.GetOriginalURL(id)
+    if !found {
+        urls, err := h.service.GetURLsByUserID("")
+        if err == nil {
+            baseURL := getBaseURL(r)
+            logrus.Infof("BaseURL: %s, URLs count: %d", baseURL, len(urls))
+            for _, url := range urls {
+                shortID := strings.TrimPrefix(url.ShortURL, baseURL+"/")
+                logrus.Infof("ShortID: %s, ID: %s, IsDeleted: %v", shortID, id, url.IsDeleted)
+                if shortID == id && url.IsDeleted {
+                    logrus.WithField("id", id).Warn("URL is deleted")
+                    http.Error(w, "Gone", http.StatusGone)
+                    return
+                }
+            }
+        } else {
+            logrus.WithError(err).Warn("Failed to get URLs")
+        }
+        logrus.WithField("id", id).Warn("URL not found")
+        http.Error(w, "URL not found", http.StatusBadRequest)
+        return
+    }
 
-	logrus.WithFields(logrus.Fields{
-		"id":          id,
-		"redirect_to": originalURL,
-	}).Info("Redirecting to original URL")
+    logrus.WithFields(logrus.Fields{
+        "id":          id,
+        "redirect_to": originalURL,
+    }).Info("Redirecting to original URL")
 
-	w.Header().Set("Location", originalURL)
-	w.WriteHeader(http.StatusTemporaryRedirect)
+    w.Header().Set("Location", originalURL)
+    w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
