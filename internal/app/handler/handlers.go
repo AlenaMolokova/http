@@ -66,7 +66,11 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusCreated)
+	if existingShortID, err := h.service.FindByOriginalURL(originalURL); err == nil && existingShortID != "" {
+        w.WriteHeader(http.StatusConflict) 
+    } else {
+        w.WriteHeader(http.StatusCreated)
+    }
 	w.Write([]byte(shortURL))
 }
 
@@ -117,7 +121,11 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 
 	resp := models.ShortenResponse{Result: shortURL}
 
-	w.WriteHeader(http.StatusCreated)
+	if existingShortID, err := h.service.FindByOriginalURL(req.URL); err == nil && existingShortID != "" {
+        w.WriteHeader(http.StatusConflict)
+    } else {
+        w.WriteHeader(http.StatusCreated)
+    }
 	json.NewEncoder(w).Encode(resp)
 }
 
