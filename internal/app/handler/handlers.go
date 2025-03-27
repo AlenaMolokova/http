@@ -244,7 +244,6 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(resp)
 }
 
-
 func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
