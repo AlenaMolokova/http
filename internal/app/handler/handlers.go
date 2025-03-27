@@ -238,8 +238,9 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
 	}
 
 	urls, err := h.service.GetUserURLs(userID)
@@ -250,8 +251,8 @@ func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-
 	if len(urls) == 0 {
+		logrus.WithField("user_id", userID).Info("No URLs found for user")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
