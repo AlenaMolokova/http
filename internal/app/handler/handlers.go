@@ -141,29 +141,29 @@ func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	}).Info("Handling redirect request")
 
 	originalURL, found := h.service.GetOriginalURL(id)
-    if !found {
-        urls, err := h.service.GetURLsByUserID("")
-        if err == nil {
-            for _, url := range urls {
-                if url.ShortURL == id && url.IsDeleted {
-                    logrus.WithField("id", id).Warn("URL is deleted")
-                    http.Error(w, "Gone", http.StatusGone)
-                    return
-                }
-            }
-        }
-        logrus.WithField("id", id).Warn("URL not found")
-        http.Error(w, "URL not found", http.StatusBadRequest)
-        return
-    }
+	if !found {
+		urls, err := h.service.GetURLsByUserID("") 
+		if err == nil {
+			for _, url := range urls {
+				if url.ShortURL == id && url.IsDeleted {
+					logrus.WithField("id", id).Warn("URL is deleted")
+					http.Error(w, "Gone", http.StatusGone) 
+					return
+				}
+			}
+		}
+		logrus.WithField("id", id).Warn("URL not found")
+		http.Error(w, "URL not found", http.StatusBadRequest)
+		return
+	}
 
-    logrus.WithFields(logrus.Fields{
-        "id":          id,
-        "redirect_to": originalURL,
-    }).Info("Redirecting to original URL")
+	logrus.WithFields(logrus.Fields{
+		"id":          id,
+		"redirect_to": originalURL,
+	}).Info("Redirecting to original URL")
 
-    w.Header().Set("Location", originalURL)
-    w.WriteHeader(http.StatusTemporaryRedirect)
+	w.Header().Set("Location", originalURL)
+	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
@@ -293,30 +293,30 @@ func getBaseURL(r *http.Request) string {
 
 func (h *Handler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
     userID, err := auth.GetUserIDFromCookie(r)
-    if err != nil {
-        logrus.WithError(err).Warn("No valid cookie found, unauthorized")
-        http.Error(w, "Unauthorized", http.StatusUnauthorized)
-        return
-    }
+	if err != nil {
+		logrus.WithError(err).Warn("No valid cookie found, unauthorized")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-    var shortIDs []string
-    if err := json.NewDecoder(r.Body).Decode(&shortIDs); err != nil {
-        logrus.WithError(err).Error("Invalid JSON format")
-        http.Error(w, "Invalid JSON format", http.StatusBadRequest)
-        return
-    }
-    defer r.Body.Close()
+	var shortIDs []string
+	if err := json.NewDecoder(r.Body).Decode(&shortIDs); err != nil {
+		logrus.WithError(err).Error("Invalid JSON format")
+		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
 
-    if len(shortIDs) == 0 {
-        http.Error(w, "Empty list of URLs", http.StatusBadRequest)
-        return
-    }
+	if len(shortIDs) == 0 {
+		http.Error(w, "Empty list of URLs", http.StatusBadRequest)
+		return
+	}
 
-    if err := h.service.DeleteURLs(shortIDs, userID); err != nil {
-        logrus.WithError(err).Error("Failed to queue URL deletion")
-        http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
-        return
-    }
+	if err := h.service.DeleteURLs(shortIDs, userID); err != nil {
+		logrus.WithError(err).Error("Failed to delete URLs")
+		http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
+		return
+	}
 
-    w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusAccepted)
 }
