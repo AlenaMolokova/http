@@ -5,7 +5,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
-    "github.com/AlenaMolokova/http/internal/app/middleware"
+	"github.com/AlenaMolokova/http/internal/app/middleware"
 )
 
 type URLHandler interface {
@@ -32,15 +32,15 @@ func (r *Router) InitRoutes() *mux.Router {
 	router := mux.NewRouter()
 
 	router.Use(middleware.GzipMiddleware)
-    router.Use(middleware.LoggingMiddleware)
+	router.Use(middleware.LoggingMiddleware)
 
 	router.HandleFunc("/", r.handler.HandleShortenURL).Methods(http.MethodPost)
-    router.HandleFunc("/api/shorten", r.handler.HandleShortenURLJSON).Methods(http.MethodPost)
-    router.HandleFunc("/api/shorten/batch", r.handler.HandleBatchShortenURL).Methods(http.MethodPost)
-    router.HandleFunc("/api/user/urls", r.handler.HandleGetUserURLs).Methods(http.MethodGet)
-    router.HandleFunc("/api/user/urls", r.handler.HandleDeleteURLs).Methods(http.MethodDelete) // Добавлено
-    router.HandleFunc("/ping", r.handler.HandlePing).Methods(http.MethodGet)
-    router.HandleFunc("/{id}", r.handler.HandleRedirect).Methods(http.MethodGet)
+	router.HandleFunc("/api/shorten", r.handler.HandleShortenURLJSON).Methods(http.MethodPost)
+	router.HandleFunc("/api/shorten/batch", r.handler.HandleBatchShortenURL).Methods(http.MethodPost)
+	router.HandleFunc("/api/user/urls", r.handler.HandleGetUserURLs).Methods(http.MethodGet)
+	router.HandleFunc("/api/user/urls", r.handler.HandleDeleteURLs).Methods(http.MethodDelete)
+	router.HandleFunc("/ping", r.handler.HandlePing).Methods(http.MethodGet)
+	router.HandleFunc("/{id}", r.handler.HandleRedirect).Methods(http.MethodGet)
 
 	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logrus.WithFields(logrus.Fields{

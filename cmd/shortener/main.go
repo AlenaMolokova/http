@@ -13,7 +13,6 @@ import (
 )
 
 func main() {
-
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetLevel(logrus.InfoLevel)
 
@@ -25,13 +24,23 @@ func main() {
 	}
 
 	urlGenerator := generator.NewGenerator(8)
-	urlService := service.NewURLService(urlStorage, urlGenerator, cfg.BaseURL)
-	urlHandler := handler.NewHandler(urlService)
-	urlRouter := router.NewRouter(urlHandler)
+	urlService := service.NewService(
+		urlStorage.Saver,
+		urlStorage.BatchSaver,
+		urlStorage.Getter,
+		urlStorage.Fetcher,
+		urlStorage.Deleter,
+		urlStorage.Pinger,
+		urlGenerator,
+		cfg.BaseURL,
+	)
+
+	urlHandler := handler.NewURLHandler(urlService, urlService, urlService, urlService, urlService, cfg.BaseURL)
+	r := router.NewRouter(urlHandler)
 
 	server := &http.Server{
 		Addr:    cfg.ServerAddress,
-		Handler: urlRouter.InitRoutes(),
+		Handler: r.InitRoutes(),
 	}
 	logrus.WithFields(logrus.Fields{
 		"address":  cfg.ServerAddress,
@@ -41,5 +50,4 @@ func main() {
 	if err := server.ListenAndServe(); err != nil {
 		logrus.Fatal(err)
 	}
-
 }

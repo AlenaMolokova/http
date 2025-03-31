@@ -2,30 +2,38 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"context"
 
 	"github.com/AlenaMolokova/http/internal/app/config"
 	"github.com/AlenaMolokova/http/internal/app/generator"
-	"github.com/AlenaMolokova/http/internal/app/service"
-	"github.com/AlenaMolokova/http/internal/app/storage/memory"
 	"github.com/AlenaMolokova/http/internal/app/models"
+	"github.com/AlenaMolokova/http/internal/app/service"
+	"github.com/AlenaMolokova/http/internal/app/storage"
+	"github.com/AlenaMolokova/http/internal/app/storage/memory"
 	"github.com/gorilla/mux"
 )
 
 func TestHandleShortenURL_Success(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com"))
-	req = req.WithContext(context.WithValue(req.Context(), baseURLKey{}, cfg.BaseURL))
 	req.Header.Set("Content-Type", "text/plain")
 	w := httptest.NewRecorder()
 
@@ -43,10 +51,18 @@ func TestHandleShortenURL_Success(t *testing.T) {
 
 func TestHandleShortenURL_InvalidContentType(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("https://example.com"))
 	req.Header.Set("Content-Type", "application/json")
@@ -61,10 +77,18 @@ func TestHandleShortenURL_InvalidContentType(t *testing.T) {
 
 func TestHandleShortenURL_EmptyBody(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
 	req.Header.Set("Content-Type", "text/plain")
@@ -79,17 +103,23 @@ func TestHandleShortenURL_EmptyBody(t *testing.T) {
 
 func TestHandleShortenURLJSON_Success(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
-	
 	requestBody := models.ShortenRequest{URL: "https://example.com"}
 	jsonBody, _ := json.Marshal(requestBody)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten", bytes.NewBuffer(jsonBody))
-	req = req.WithContext(context.WithValue(req.Context(), baseURLKey{}, cfg.BaseURL))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -112,10 +142,18 @@ func TestHandleShortenURLJSON_Success(t *testing.T) {
 
 func TestHandleShortenURLJSON_InvalidJSON(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -130,10 +168,18 @@ func TestHandleShortenURLJSON_InvalidJSON(t *testing.T) {
 
 func TestHandleShortenURLJSON_EmptyURL(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	requestBody := models.ShortenRequest{URL: ""}
 	jsonBody, _ := json.Marshal(requestBody)
@@ -151,10 +197,18 @@ func TestHandleShortenURLJSON_EmptyURL(t *testing.T) {
 
 func TestHandleRedirect_Success(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	router := mux.NewRouter()
 	router.HandleFunc("/{id}", handler.HandleRedirect).Methods(http.MethodGet)
@@ -162,8 +216,8 @@ func TestHandleRedirect_Success(t *testing.T) {
 	shortID := generator.Generate()
 	originalURL := "https://example.com"
 	userID := "test-user"
-	storage.Save(shortID, originalURL, userID)
-	
+	storageImpl.Save(context.Background(), shortID, originalURL, userID) // Исправлено: добавлен context
+
 	req := httptest.NewRequest(http.MethodGet, "/"+shortID, nil)
 	w := httptest.NewRecorder()
 
@@ -180,34 +234,46 @@ func TestHandleRedirect_Success(t *testing.T) {
 
 func TestHandleRedirect_NotFound(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
-	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+    storageImpl := memory.NewMemoryStorage()
+    urlStorage := &storage.Storage{
+        Saver:      storageImpl,
+        BatchSaver: storageImpl,
+        Getter:     storageImpl,
+        Fetcher:    storageImpl,
+        Deleter:    storageImpl,
+        Pinger:     storageImpl,
+    }
+    generator := generator.NewGenerator(8)
+    serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+    handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
-	router := mux.NewRouter()
-	router.HandleFunc("/{id}", handler.HandleRedirect).Methods(http.MethodGet)
+    router := mux.NewRouter()
+    router.HandleFunc("/{id}", handler.HandleRedirect).Methods(http.MethodGet)
 
-	req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
-	w := httptest.NewRecorder()
+    req := httptest.NewRequest(http.MethodGet, "/nonexistent", nil)
+    w := httptest.NewRecorder()
 
-	router.ServeHTTP(w, req)
+    router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("Expected 400, got %d", w.Code)
-	}
-
-	if w.Code != http.StatusGone && w.Code != http.StatusBadRequest {
-        t.Errorf("Expected 410 or 400, got %d", w.Code)
+    if w.Code != http.StatusGone { 
+        t.Errorf("Expected 410, got %d", w.Code)
     }
 }
 
 func TestHandleBatchShortenURL_Success(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	requestBatch := []models.BatchShortenRequest{
 		{CorrelationID: "1", OriginalURL: "https://example1.com"},
@@ -247,10 +313,18 @@ func TestHandleBatchShortenURL_Success(t *testing.T) {
 
 func TestHandleBatchShortenURL_EmptyBatch(t *testing.T) {
 	cfg := &config.Config{BaseURL: "http://localhost:8080"}
-	storage := memory.NewMemoryStorage()
+	storageImpl := memory.NewMemoryStorage()
+	urlStorage := &storage.Storage{
+		Saver:      storageImpl,
+		BatchSaver: storageImpl,
+		Getter:     storageImpl,
+		Fetcher:    storageImpl,
+		Deleter:    storageImpl,
+		Pinger:     storageImpl,
+	}
 	generator := generator.NewGenerator(8)
-	service := service.NewURLService(storage, generator, cfg.BaseURL)
-	handler := NewHandler(service)
+	serviceImpl := service.NewService(urlStorage.Saver, urlStorage.BatchSaver, urlStorage.Getter, urlStorage.Fetcher, urlStorage.Deleter, urlStorage.Pinger, generator, cfg.BaseURL)
+	handler := NewURLHandler(serviceImpl, serviceImpl, serviceImpl, serviceImpl, serviceImpl, cfg.BaseURL)
 
 	requestBatch := []models.BatchShortenRequest{}
 	jsonBody, _ := json.Marshal(requestBatch)
