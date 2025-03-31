@@ -9,7 +9,7 @@ import (
 )
 
 type App struct {
-	Handler *handler.Handler
+	Handler *handler.URLHandler 
 }
 
 func NewApp(cfg *config.Config) (*App, error) {
@@ -20,9 +20,18 @@ func NewApp(cfg *config.Config) (*App, error) {
 
 	urlGenerator := generator.NewGenerator(8)
 
-	urlService := service.NewURLService(urlStorage, urlGenerator, cfg.BaseURL)
+	urlService := service.NewService(
+		urlStorage.Saver,
+		urlStorage.BatchSaver,
+		urlStorage.Getter,
+		urlStorage.Fetcher,
+		urlStorage.Deleter,
+		urlStorage.Pinger,
+		urlGenerator,
+		cfg.BaseURL,
+	)
 
-	handler := handler.NewHandler(urlService)
+	handler := handler.NewURLHandler(urlService, urlService, urlService, urlService, urlService, cfg.BaseURL)
 
 	return &App{
 		Handler: handler,

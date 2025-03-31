@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,19 +14,67 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Handler struct {
-	service service.URLService
+type ShortenHandler struct {
+	shortener service.Shortener
 }
 
-type baseURLKey struct{}
+type RedirectHandler struct {
+	redirector service.URLGetter
+	fetcher    service.URLFetcher
+	baseURL    string
+}
 
-func NewHandler(service service.URLService) *Handler {
-	return &Handler{
-		service: service,
+type UserURLsHandler struct {
+	fetcher service.URLFetcher
+}
+
+type DeleteHandler struct {
+	deleter service.URLDeleter
+}
+
+type PingHandler struct {
+	pinger service.Pinger
+}
+
+type URLHandler struct {
+	shorten  *ShortenHandler
+	redirect *RedirectHandler
+	userURLs *UserURLsHandler
+	delete   *DeleteHandler
+	ping     *PingHandler
+}
+
+func NewShortenHandler(shortener service.Shortener) *ShortenHandler {
+	return &ShortenHandler{shortener}
+}
+
+func NewRedirectHandler(redirector service.URLGetter, fetcher service.URLFetcher, baseURL string) *RedirectHandler {
+	return &RedirectHandler{redirector, fetcher, baseURL}
+}
+
+func NewUserURLsHandler(fetcher service.URLFetcher) *UserURLsHandler {
+	return &UserURLsHandler{fetcher}
+}
+
+func NewDeleteHandler(deleter service.URLDeleter) *DeleteHandler {
+	return &DeleteHandler{deleter}
+}
+
+func NewPingHandler(pinger service.Pinger) *PingHandler {
+	return &PingHandler{pinger}
+}
+
+func NewURLHandler(shortener service.Shortener, getter service.URLGetter, fetcher service.URLFetcher, deleter service.URLDeleter, pinger service.Pinger, baseURL string) *URLHandler {
+	return &URLHandler{
+		shorten:  NewShortenHandler(shortener),
+		redirect: NewRedirectHandler(getter, fetcher, baseURL),
+		userURLs: NewUserURLsHandler(fetcher),
+		delete:   NewDeleteHandler(deleter),
+		ping:     NewPingHandler(pinger),
 	}
 }
 
-func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
+func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		userID = auth.GenerateUserID()
@@ -60,7 +107,8 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ShortenURL(originalURL, userID)
+	ctx := r.Context()
+	result, err := h.shortener.ShortenURL(ctx, originalURL, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten URL")
 		http.Error(w, "Failed to shorten URL", http.StatusInternalServerError)
@@ -76,7 +124,7 @@ func (h *Handler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(result.ShortURL))
 }
 
-func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
+func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		userID = auth.GenerateUserID()
@@ -113,7 +161,8 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.service.ShortenURL(req.URL, userID)
+	ctx := r.Context()
+	result, err := h.shortener.ShortenURL(ctx, req.URL, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten URL")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -130,71 +179,14 @@ func (h *Handler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (h *Handler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-    id := vars["id"]
-
-    logrus.WithFields(logrus.Fields{
-        "id":     id,
-        "method": r.Method,
-        "uri":    r.RequestURI,
-    }).Info("Handling redirect request")
-
-    originalURL, found := h.service.GetOriginalURL(id)
-    if !found {
-        urls, err := h.service.GetURLsByUserID("")
-        if err == nil {
-            baseURL := getBaseURL(r)
-            logrus.Infof("BaseURL: %s, URLs count: %d", baseURL, len(urls))
-            for _, url := range urls {
-                shortID := strings.TrimPrefix(url.ShortURL, baseURL+"/")
-                logrus.Infof("ShortID: %s, ID: %s, IsDeleted: %v", shortID, id, url.IsDeleted)
-                if shortID == id && url.IsDeleted {
-                    logrus.WithField("id", id).Warn("URL is deleted")
-                    http.Error(w, "Gone", http.StatusGone)
-                    return
-                }
-            }
-        } else {
-            logrus.WithError(err).Warn("Failed to get URLs")
-        }
-        logrus.WithField("id", id).Warn("URL not found")
-        http.Error(w, "URL not found", http.StatusBadRequest)
-        return
-    }
-
-    logrus.WithFields(logrus.Fields{
-        "id":          id,
-        "redirect_to": originalURL,
-    }).Info("Redirecting to original URL")
-
-    w.Header().Set("Location", originalURL)
-    w.WriteHeader(http.StatusTemporaryRedirect)
-}
-
-func (h *Handler) HandlePing(w http.ResponseWriter, r *http.Request) {
-	err := h.service.Ping()
+func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
+	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
-		if err.Error() == "file storage does not support database connection check" ||
-			err.Error() == "memory storage does not support database connection check" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Storage does not require database connection"))
-			return
-		}
-
-		logrus.WithError(err).Error("Database ping failed")
-		http.Error(w, "Database connection error", http.StatusInternalServerError)
-		return
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Database connection is OK"))
-
-}
-
-func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
 	var req []models.BatchShortenRequest
-
 	if r.Body == nil {
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
@@ -203,7 +195,7 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		logrus.WithError(err).Error("Invalid JSON format")
 		w.WriteHeader(http.StatusBadRequest)
@@ -223,7 +215,6 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 			json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
 			return
 		}
-
 		if _, err := url.Parse(item.OriginalURL); err != nil {
 			logrus.WithError(err).Error("Invalid URL format")
 			w.WriteHeader(http.StatusBadRequest)
@@ -232,13 +223,8 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	userID, err := auth.GetUserIDFromCookie(r)
-	if err != nil {
-		userID = auth.GenerateUserID()
-		auth.SetUserIDCookie(w, userID)
-	}
-
-	resp, err := h.service.ShortenBatch(req, userID)
+	ctx := r.Context()
+	resp, err := h.shortener.ShortenBatch(ctx, req, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten batch")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -250,7 +236,34 @@ func (h *Handler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
+func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	logrus.WithFields(logrus.Fields{
+		"id":     id,
+		"method": r.Method,
+		"uri":    r.RequestURI,
+	}).Info("Handling redirect request")
+
+	ctx := r.Context()
+	originalURL, found := h.redirector.Get(ctx, id)
+	if !found {
+		logrus.WithField("id", id).Warn("URL not found or deleted")
+		http.Error(w, "Gone", http.StatusGone)
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"id":          id,
+		"redirect_to": originalURL,
+	}).Info("Redirecting to original URL")
+
+	w.Header().Set("Location", originalURL)
+	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
@@ -258,7 +271,8 @@ func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 		auth.SetUserIDCookie(w, userID)
 	}
 
-	urls, err := h.service.GetUserURLs(userID)
+	ctx := r.Context()
+	urls, err := h.fetcher.GetURLsByUserID(ctx, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get user URLs")
 		http.Error(w, "Failed to get user URLs", http.StatusInternalServerError)
@@ -272,11 +286,6 @@ func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := getBaseURL(r)
-	for i := range urls {
-		urls[i].ShortURL = baseURL + "/" + urls[i].ShortURL
-	}
-
 	if err := json.NewEncoder(w).Encode(urls); err != nil {
 		logrus.WithError(err).Error("Failed to encode user URLs")
 		http.Error(w, "Failed to encode user URLs", http.StatusInternalServerError)
@@ -284,19 +293,7 @@ func (h *Handler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getBaseURL(r *http.Request) string {
-	if baseURL, ok := r.Context().Value(baseURLKey{}).(string); ok {
-		return baseURL
-	}
-
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return fmt.Sprintf("%s://%s", scheme, r.Host)
-}
-
-func (h *Handler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
+func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		logrus.WithError(err).Warn("No valid cookie found, unauthorized")
@@ -317,11 +314,58 @@ func (h *Handler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DeleteURLs(shortIDs, userID); err != nil {
+	ctx := r.Context()
+	if err := h.deleter.DeleteURLs(ctx, shortIDs, userID); err != nil {
 		logrus.WithError(err).Error("Failed to delete URLs")
 		http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	err := h.pinger.Ping(ctx)
+	if err != nil {
+		if err.Error() == "file storage does not support database connection check" ||
+			err.Error() == "memory storage does not support database connection check" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Storage does not require database connection"))
+			return
+		}
+		logrus.WithError(err).Error("Database ping failed")
+		http.Error(w, "Database connection error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Database connection is OK"))
+}
+
+func (h *URLHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
+	h.shorten.HandleShortenURL(w, r)
+}
+
+func (h *URLHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
+	h.shorten.HandleShortenURLJSON(w, r)
+}
+
+func (h *URLHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
+	h.shorten.HandleBatchShortenURL(w, r)
+}
+
+func (h *URLHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	h.redirect.HandleRedirect(w, r)
+}
+
+func (h *URLHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
+	h.userURLs.HandleGetUserURLs(w, r)
+}
+
+func (h *URLHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
+	h.delete.HandleDeleteURLs(w, r)
+}
+
+func (h *URLHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
+	h.ping.HandlePing(w, r)
 }

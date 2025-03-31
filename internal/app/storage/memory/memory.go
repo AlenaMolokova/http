@@ -1,36 +1,30 @@
 package memory
 
 import (
+	"context"
 	"errors"
 	"sync"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
-	"github.com/sirupsen/logrus"
 )
 
-type URLRecord struct {
-	ShortID     string
-	OriginalURL string
-	UserID      string
-	IsDeleted   bool
-}
-
 type MemoryStorage struct {
-	urls map[string]URLRecord
+	urls map[string]models.UserURL
 	mu   sync.RWMutex
 }
 
 func NewMemoryStorage() *MemoryStorage {
 	return &MemoryStorage{
-		urls: make(map[string]URLRecord),
+		urls: make(map[string]models.UserURL),
 	}
 }
 
-func (s *MemoryStorage) Save(shortID, originalURL, userID string) error {
+func (s *MemoryStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.urls[shortID] = URLRecord{
-		ShortID:     shortID,
+
+	s.urls[shortID] = models.UserURL{
+		ShortURL:    shortID,
 		OriginalURL: originalURL,
 		UserID:      userID,
 		IsDeleted:   false,
@@ -38,93 +32,70 @@ func (s *MemoryStorage) Save(shortID, originalURL, userID string) error {
 	return nil
 }
 
-func (s *MemoryStorage) Get(shortID string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	record, ok := s.urls[shortID]
-	logrus.WithFields(logrus.Fields{
-		"shortID": shortID,
-		"url":     record.OriginalURL,
-		"found":   ok,
-	}).Info("Storage lookup")
-
-	if !ok || record.IsDeleted {
-		return "", false
-	}
-
-	return record.OriginalURL, true
-}
-
-func (s *MemoryStorage) Ping() error {
-	return errors.New("memory storage does not support database connection check")
-}
-
-func (s *MemoryStorage) SaveBatch(items map[string]string, userID string) error {
+func (s *MemoryStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for shortID, originalURL := range items {
-		s.urls[shortID] = URLRecord{
-			ShortID:     shortID,
+		s.urls[shortID] = models.UserURL{
+			ShortURL:    shortID,
 			OriginalURL: originalURL,
 			UserID:      userID,
 			IsDeleted:   false,
 		}
 	}
-
 	return nil
 }
 
-func (s *MemoryStorage) FindByOriginalURL(originalURL string) (string, error) {
+func (s *MemoryStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for shortID, record := range s.urls {
-		if record.OriginalURL == originalURL && !record.IsDeleted {
-			return shortID, nil
-		}
+	url, exists := s.urls[shortID]
+	if !exists || url.IsDeleted {
+		return "", false
 	}
-
-	return "", errors.New("url not found")
+	return url.OriginalURL, true
 }
 
-func (s *MemoryStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
+func (s *MemoryStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	var result []models.UserURL
-
-	for _, record := range s.urls {
-		if record.UserID == userID && !record.IsDeleted {
-			result = append(result, models.UserURL{
-				ShortURL:    record.ShortID,
-				OriginalURL: record.OriginalURL,
-				IsDeleted:   record.IsDeleted,
-			})
+	for _, url := range s.urls {
+		if url.OriginalURL == originalURL && !url.IsDeleted {
+			return url.ShortURL, nil
 		}
 	}
-
-	return result, nil
+	return "", nil
 }
 
-func (s *MemoryStorage) MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error) {
+func (s *MemoryStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var urls []models.UserURL
+	for _, url := range s.urls {
+		if url.UserID == userID {
+			urls = append(urls, url)
+		}
+	}
+	return urls, nil
+}
+
+func (s *MemoryStorage) Ping(ctx context.Context) error {
+	return errors.New("memory storage does not support database connection check")
+}
+
+func (s *MemoryStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var rowsAffected int64
-
 	for _, shortID := range shortIDs {
-		if record, ok := s.urls[shortID]; ok && record.UserID == userID {
-			record.IsDeleted = true
-			s.urls[shortID] = record
-			rowsAffected++
+		if url, exists := s.urls[shortID]; exists && url.UserID == userID {
+			url.IsDeleted = true
+			s.urls[shortID] = url
 		}
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"short_ids":     shortIDs,
-		"user_id":       userID,
-		"rows_affected": rowsAffected,
-	}).Info("URLs marked as deleted in memory storage")
-	return rowsAffected, nil
+	return nil
 }

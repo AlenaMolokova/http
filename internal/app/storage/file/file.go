@@ -1,248 +1,140 @@
 package file
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
-	"strconv"
-	
+
 	"github.com/AlenaMolokova/http/internal/app/models"
-	"github.com/sirupsen/logrus"
 )
 
-type URLRecord struct {
-	UUID        string `json:"uuid"`
-	ShortURL    string `json:"short_url"`
-	OriginalURL string `json:"original_url"`
-	UserID      string `json:"user_id"`
-	IsDeleted   bool   `json:"is_deleted,omitempty"`
-}
-
 type FileStorage struct {
-	filename string
-	urls     map[string]URLRecord
+	filePath string
+	urls     map[string]models.UserURL
 	mu       sync.RWMutex
-	nextID   int
 }
 
-func NewFileStorage(filename string) (*FileStorage, error) {
-	storage := &FileStorage{
-		filename: filename,
-		urls:     make(map[string]URLRecord),
-		nextID:   1,
+func NewFileStorage(filePath string) (*FileStorage, error) {
+	fs := &FileStorage{
+		filePath: filePath,
+		urls:     make(map[string]models.UserURL),
 	}
 
-	if err := storage.loadFromFile(); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("не удалось загрузить данные из файла: %v", err)
-		}
-		logrus.Info("Файл хранилища не найден, будет создан новый")
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fs, nil
 	}
 
-	return storage, nil
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []models.UserURL
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+
+	for _, entry := range entries {
+		fs.urls[entry.ShortURL] = entry
+	}
+
+	return fs, nil
 }
 
-func (s *FileStorage) Save(shortID, originalURL, userID string) error {
+func (s *FileStorage) writeToFile(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.urls[shortID] = URLRecord{
-		ShortURL:    shortID,
-		OriginalURL: originalURL,
-		UserID:      userID,
-	}
-
-	record := URLRecord{
-		UUID:        fmt.Sprintf("%d", s.nextID),
-		ShortURL:    shortID,
-		OriginalURL: originalURL,
-		UserID:      userID,
-	}
-	s.nextID++
-
-	file, err := os.OpenFile(s.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("не удалось открыть файл: %v", err)
-	}
-	defer file.Close()
-
-	data, err := json.Marshal(record)
-	if err != nil {
-		return fmt.Errorf("не удалось сериализовать запись: %v", err)
-	}
-
-	if _, err := file.Write(append(data, '\n')); err != nil {
-		return fmt.Errorf("не удалось записать в файл: %v", err)
-	}
-
-	return nil
-}
-
-func (s *FileStorage) Get(shortID string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	record, ok := s.urls[shortID]
-	logrus.WithFields(logrus.Fields{
-		"shortID": shortID,
-		"url":     record.OriginalURL,
-		"found":   ok,
-	}).Info("Storage lookup")
-	
-	if !ok {
-		return "", false
-	}
-	
-	return record.OriginalURL, true
-}
-
-func (s *FileStorage) Ping() error {
-	return errors.New("file storage does not support database connection check")
-}
-
-func (s *FileStorage) loadFromFile() error {
-	file, err := os.Open(s.filename)
+	data, err := json.MarshalIndent(s.urls, "", "  ")
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	highestID := 0
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		var record URLRecord
-		if err := json.Unmarshal([]byte(line), &record); err != nil {
-			return fmt.Errorf("ошибка при десериализации строки: %v", err)
-		}
-
-		s.urls[record.ShortURL] = record
-
-		id, err := strconv.Atoi(record.UUID)
-		if err == nil && id > highestID {
-			highestID = id
-		}
-		
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("ошибка при чтении файла: %v", err)
-	}
-
-	s.nextID = highestID + 1
-	logrus.WithField("count", len(s.urls)).Info("Загружены URL из файла")
-	return nil
+	return os.WriteFile(s.filePath, data, 0644)
 }
 
-func (s *FileStorage) SaveBatch(items map[string]string, userID string) error {
+func (s *FileStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	file, err := os.OpenFile(s.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("не удалось открыть файл: %v", err)
+	s.urls[shortID] = models.UserURL{
+		ShortURL:    shortID,
+		OriginalURL: originalURL,
+		UserID:      userID,
+		IsDeleted:   false,
 	}
-	defer file.Close()
+
+	return s.writeToFile(ctx)
+}
+
+func (s *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	for shortID, originalURL := range items {
-		s.urls[shortID] = URLRecord{
+		s.urls[shortID] = models.UserURL{
 			ShortURL:    shortID,
 			OriginalURL: originalURL,
 			UserID:      userID,
 			IsDeleted:   false,
 		}
-
-		record := URLRecord{
-			UUID:        fmt.Sprintf("%d", s.nextID),
-			ShortURL:    shortID,
-			OriginalURL: originalURL,
-			UserID:      userID,
-			IsDeleted:   false,
-		}
-		s.nextID++
-
-		data, err := json.Marshal(record)
-		if err != nil {
-			return fmt.Errorf("не удалось сериализовать запись: %v", err)
-		}
-
-		if _, err := file.Write(append(data, '\n')); err != nil {
-			return fmt.Errorf("не удалось записать в файл: %v", err)
-		}
 	}
 
-	return nil
+	return s.writeToFile(ctx)
 }
 
-func (s *FileStorage) FindByOriginalURL(originalURL string) (string, error) {
+func (s *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for shortID, record  :=range s.urls{
-		if record.OriginalURL == originalURL{
-			return shortID, nil
-		}
+	url, exists := s.urls[shortID]
+	if !exists || url.IsDeleted {
+		return "", false
 	}
-
-	return "", errors.New("url not found")
+	return url.OriginalURL, true
 }
 
-func (s *FileStorage) GetURLsByUserID(userID string) ([]models.UserURL, error) {
+func (s *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
-	var result []models.UserURL
-	
-	for _, record := range s.urls {
-		if record.UserID == userID {
-			result = append(result, models.UserURL{
-				ShortURL:    record.ShortURL,
-				OriginalURL: record.OriginalURL,
-			})
+
+	for _, url := range s.urls {
+		if url.OriginalURL == originalURL && !url.IsDeleted {
+			return url.ShortURL, nil
 		}
 	}
-
-	return result, nil
+	return "", nil
 }
 
-func (s *FileStorage) MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error) {
+func (s *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var urls []models.UserURL
+	for _, url := range s.urls {
+		if url.UserID == userID {
+			urls = append(urls, url)
+		}
+	}
+	return urls, nil
+}
+
+func (s *FileStorage) Ping(ctx context.Context) error {
+	return errors.New("file storage does not support database connection check")
+}
+
+func (s *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var rowsAffected int64
-
 	for _, shortID := range shortIDs {
-		if record, ok := s.urls[shortID]; ok && record.UserID == userID {
-			record.IsDeleted = true
-			s.urls[shortID] = record
-			rowsAffected++
+		if url, exists := s.urls[shortID]; exists && url.UserID == userID {
+			url.IsDeleted = true
+			s.urls[shortID] = url
 		}
 	}
 
-	file, err := os.Create(s.filename)
-	if err != nil {
-		return 0, fmt.Errorf("не удалось открыть файл для записи: %v", err)
-	}
-	defer file.Close()
-
-	for _, record := range s.urls {
-		data, err := json.Marshal(record)
-		if err != nil {
-			return 0, fmt.Errorf("не удалось сериализовать запись: %v", err)
-		}
-		if _, err := file.Write(append(data, '\n')); err != nil {
-			return 0, fmt.Errorf("не удалось записать в файл: %v", err)
-		}
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"short_ids":     shortIDs,
-		"user_id":       userID,
-		"rows_affected": rowsAffected,
-	}).Info("URLs marked as deleted in file storage")
-	return rowsAffected, nil
+	return s.writeToFile(ctx)
 }

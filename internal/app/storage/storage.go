@@ -1,43 +1,55 @@
 package storage
 
 import (
-	"github.com/AlenaMolokova/http/internal/app/models"
+	"github.com/AlenaMolokova/http/internal/app/service" 
 	"github.com/AlenaMolokova/http/internal/app/storage/database"
 	"github.com/AlenaMolokova/http/internal/app/storage/file"
 	"github.com/AlenaMolokova/http/internal/app/storage/memory"
 	"github.com/sirupsen/logrus"
 )
 
-func NewStorage(databaseDSN, fileStoragePath string) (URLStorage, error) {
-	
+type Storage struct {
+	Saver      service.URLSaver
+	BatchSaver service.URLBatchSaver
+	Getter     service.URLGetter
+	Fetcher    service.URLFetcher
+	Deleter    service.URLDeleter
+	Pinger     service.Pinger
+}
+
+func NewStorage(databaseDSN, fileStoragePath string) (*Storage, error) {
+	var impl interface{}
 	if databaseDSN != "" {
 		dbStorage, err := database.NewPostgresStorage(databaseDSN)
 		if err == nil {
 			logrus.Info("Используется хранилище PostgreSQL")
-			return dbStorage, nil
+			impl = dbStorage
+		} else {
+			logrus.WithError(err).Warn("Не удалось использовать PostgreSQL")
 		}
-		logrus.WithError(err).Warn("Не удалось использовать PostgreSQL")
 	}
 
-	if fileStoragePath != "" {
+	if impl == nil && fileStoragePath != "" {
 		fileStorage, err := file.NewFileStorage(fileStoragePath)
 		if err == nil {
 			logrus.WithField("file", fileStoragePath).Info("Используется файловое хранилище")
-			return fileStorage, nil
+			impl = fileStorage
+		} else {
+			logrus.WithError(err).Warn("Не удалось использовать файловое хранилище")
 		}
-		logrus.WithError(err).Warn("Не удалось использовать файловое хранилище")
 	}
 
-	logrus.Info("Используется хранилище в памяти")
-	return memory.NewMemoryStorage(), nil
-}
+	if impl == nil {
+		logrus.Info("Используется хранилище в памяти")
+		impl = memory.NewMemoryStorage()
+	}
 
-type URLStorage interface {
-	Save(shortID, originalURL, userID string) error
-	SaveBatch(items map[string]string, userID string) error
-	Get(shortID string) (string, bool)
-	FindByOriginalURL(originalURL string) (string, error)
-	GetURLsByUserID(userID string) ([]models.UserURL, error)
-	Ping() error
-	MarkURLsAsDeleted(shortIDs []string, userID string) (int64, error)
+	return &Storage{
+		Saver:      impl.(service.URLSaver),
+		BatchSaver: impl.(service.URLBatchSaver),
+		Getter:     impl.(service.URLGetter),
+		Fetcher:    impl.(service.URLFetcher),
+		Deleter:    impl.(service.URLDeleter),
+		Pinger:     impl.(service.Pinger),
+	}, nil
 }
