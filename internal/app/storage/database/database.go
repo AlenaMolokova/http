@@ -99,21 +99,15 @@ func (s *PostgresStorage) GetURLsByUserID(ctx context.Context, userID string) ([
 
 	var urls []models.UserURL
 	for rows.Next() {
-		var shortID, originalURL string
-		var isDeleted bool
-		if err := rows.Scan(&shortID, &originalURL, &isDeleted); err != nil {
+		var url models.UserURL
+		if err := rows.Scan(&url.ShortURL, &url.OriginalURL, &url.IsDeleted); err != nil {
+			logrus.WithError(err).Error("Failed to scan URL row")
 			return nil, err
 		}
-		urls = append(urls, models.UserURL{
-			ShortURL:    shortID,
-			OriginalURL: originalURL,
-			IsDeleted:   isDeleted,
-		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		urls = append(urls, url)
 	}
 	return urls, nil
+
 }
 
 func (s *PostgresStorage) Ping(ctx context.Context) error {
