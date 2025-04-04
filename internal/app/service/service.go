@@ -34,12 +34,18 @@ func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models
 }
 
 func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (models.ShortenResult, error) {
-	existingShortID, err := s.saver.FindByOriginalURL(ctx, originalURL)
+	logrus.WithFields(logrus.Fields{
+        "originalURL": originalURL,
+        "userID":      userID,
+    }).Debug("Shortening URL")
+    
+    existingShortID, err := s.saver.FindByOriginalURL(ctx, originalURL)
     if err != nil {
         logrus.WithError(err).Error("Error finding URL")
         return models.ShortenResult{}, fmt.Errorf("error finding URL: %w", err)
     }
     if existingShortID != "" {
+        logrus.WithField("shortID", existingShortID).Info("URL already exists")
         return models.ShortenResult{
             ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, existingShortID),
             IsNew:    false,
@@ -48,6 +54,7 @@ func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (m
 
     shortID := s.generator.Generate()
     if shortID == "" {
+        logrus.Error("Generated short ID is empty")
         return models.ShortenResult{}, fmt.Errorf("failed to generate short ID")
     }
 
@@ -56,6 +63,7 @@ func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (m
         return models.ShortenResult{}, fmt.Errorf("error saving URL: %w", err)
     }
 
+    logrus.WithField("shortID", shortID).Info("URL shortened successfully")
     return models.ShortenResult{
         ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, shortID),
         IsNew:    true,
