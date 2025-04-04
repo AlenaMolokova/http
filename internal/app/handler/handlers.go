@@ -77,57 +77,58 @@ func NewURLHandler(shortener models.URLShortener, batch models.BatchURLShortener
 
 func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	logrus.Info("Handling shorten request")
-	ctx := r.Context()
+    ctx := r.Context()
 
-	userID, err := auth.GetUserIDFromCookie(r)
-	if err != nil {
-		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
-		userID = auth.GenerateUserID()
-		auth.SetUserIDCookie(w, userID)
-	}
+    userID, err := auth.GetUserIDFromCookie(r)
+    if err != nil {
+        logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
+        userID = auth.GenerateUserID()
+        auth.SetUserIDCookie(w, userID)
+    }
 
-	contentType := r.Header.Get("Content-Type")
-	if contentType != "" && !strings.Contains(contentType, "text/plain") {
-		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
-		return
-	}
+    contentType := r.Header.Get("Content-Type")
+    if contentType != "" && !strings.Contains(contentType, "text/plain") {
+        http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
+        return
+    }
 
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to read request body")
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        logrus.WithError(err).Error("Failed to read request body")
+        http.Error(w, "Failed to read request body", http.StatusBadRequest)
+        return
+    }
+    defer r.Body.Close()
 
-	originalURL := strings.TrimSpace(string(body))
-	if originalURL == "" {
-		http.Error(w, "Empty URL", http.StatusBadRequest)
-		return
-	}
+    originalURL := strings.TrimSpace(string(body))
+    if originalURL == "" {
+        http.Error(w, "Empty URL", http.StatusBadRequest)
+        return
+    }
 
-	if _, err := url.ParseRequestURI(originalURL); err != nil {
-		logrus.WithError(err).Error("Invalid URL format")
-		http.Error(w, "Invalid URL format", http.StatusBadRequest)
-		return
-	}
+    if _, err := url.ParseRequestURI(originalURL); err != nil {
+        logrus.WithError(err).Error("Invalid URL format")
+        http.Error(w, "Invalid URL format", http.StatusBadRequest)
+        return
+    }
 
-	result, err := h.shortener.ShortenURL(ctx, originalURL, userID)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to shorten URL")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+    result, err := h.shortener.ShortenURL(ctx, originalURL, userID)
+    if err != nil {
+        logrus.WithError(err).Error("Failed to shorten URL")
+        cleanErr := strings.TrimSpace(err.Error())
+        http.Error(w, cleanErr, http.StatusInternalServerError)
+        return
+    }
 
-	w.Header().Set("Content-Type", "text/plain")
-	if result.IsNew {
-		w.WriteHeader(http.StatusCreated)
-	} else {
-		w.WriteHeader(http.StatusConflict)
-	}
-	if _, err := io.WriteString(w, result.ShortURL); err != nil {
-		logrus.WithError(err).Error("Failed to write response")
-	}
+    w.Header().Set("Content-Type", "text/plain")
+    if result.IsNew {
+        w.WriteHeader(http.StatusCreated)
+    } else {
+        w.WriteHeader(http.StatusConflict)
+    }
+    if _, err := io.WriteString(w, result.ShortURL); err != nil {
+        logrus.WithError(err).Error("Failed to write response")
+    }
 }
 
 func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
@@ -319,35 +320,35 @@ func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Reque
 
 func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
 	logrus.Info("Handling delete URLs request")
-	ctx := r.Context()
+    ctx := r.Context()
 
-	userID, err := auth.GetUserIDFromCookie(r)
-	if err != nil {
-		logrus.WithError(err).Warn("No valid cookie found, unauthorized")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+    userID, err := auth.GetUserIDFromCookie(r)
+    if err != nil {
+        logrus.WithError(err).Warn("No valid cookie found, unauthorized")
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
 
-	var shortIDs []string
-	if err := json.NewDecoder(r.Body).Decode(&shortIDs); err != nil {
-		logrus.WithError(err).Error("Invalid JSON format")
-		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+    var shortIDs []string
+    if err := json.NewDecoder(r.Body).Decode(&shortIDs); err != nil {
+        logrus.WithError(err).Error("Invalid JSON format")
+        http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+        return
+    }
+    defer r.Body.Close()
 
-	if len(shortIDs) == 0 {
-		http.Error(w, "Empty list of URLs", http.StatusBadRequest)
-		return
-	}
+    if len(shortIDs) == 0 {
+        http.Error(w, "Empty list of URLs", http.StatusBadRequest)
+        return
+    }
 
-	if err := h.deleter.DeleteURLs(ctx, shortIDs, userID); err != nil {
-		logrus.WithError(err).Error("Failed to delete URLs")
-		http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
-		return
-	}
+    if err := h.deleter.DeleteURLs(ctx, shortIDs, userID); err != nil {
+        logrus.WithError(err).Error("Failed to delete URLs")
+        http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
+        return
+    }
 
-	w.WriteHeader(http.StatusAccepted)
+    w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
