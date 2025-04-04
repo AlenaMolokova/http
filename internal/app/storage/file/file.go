@@ -116,15 +116,15 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 
 func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
+    defer fs.mu.Unlock()
 
-	for _, shortID := range shortIDs {
-		if url, exists := fs.urls[shortID]; exists && url.UserID == userID {
-			url.IsDeleted = true
-			fs.urls[shortID] = url
-		}
-	}
-	return fs.saveToFile()
+    for _, shortID := range shortIDs {
+        if url, exists := fs.urls[shortID]; exists && url.UserID == userID {
+            url.IsDeleted = true
+            fs.urls[shortID] = url
+        }
+    }
+    return fs.saveToFile()
 }
 
 func (fs *FileStorage) Ping(ctx context.Context) error {

@@ -37,7 +37,7 @@ func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (m
 	existingShortID, err := s.saver.FindByOriginalURL(ctx, originalURL)
     if err != nil {
         logrus.WithError(err).Error("Error finding URL")
-        return models.ShortenResult{}, fmt.Errorf("ошибка при поиске URL: %w", err)
+        return models.ShortenResult{}, fmt.Errorf("error finding URL: %w", err)
     }
     if existingShortID != "" {
         return models.ShortenResult{
@@ -47,9 +47,13 @@ func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (m
     }
 
     shortID := s.generator.Generate()
+    if shortID == "" {
+        return models.ShortenResult{}, fmt.Errorf("failed to generate short ID")
+    }
+
     if err := s.saver.Save(ctx, shortID, originalURL, userID); err != nil {
         logrus.WithError(err).Error("Error saving URL")
-        return models.ShortenResult{}, fmt.Errorf("ошибка сохранения URL: %w", err)
+        return models.ShortenResult{}, fmt.Errorf("error saving URL: %w", err)
     }
 
     return models.ShortenResult{
@@ -100,28 +104,12 @@ func (s *Service) GetURLsByUserID(ctx context.Context, userID string) ([]models.
 }
 
 func (s *Service) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
-	errChan := make(chan error, len(shortIDs))
-    workers := make(chan struct{}, 4)
-
-    for _, shortID := range shortIDs {
-        workers <- struct{}{}
-        go func(id string) {
-            defer func() { <-workers }()
-            err := s.deleter.DeleteURLs(ctx, []string{id}, userID)
-            errChan <- err
-        }(shortID)
+	err := s.deleter.DeleteURLs(ctx, shortIDs, userID)
+    if err != nil {
+        logrus.WithError(err).Error("Failed to delete URLs")
+        return err
     }
-
-    var firstErr error
-    for range shortIDs {
-        if err := <-errChan; err != nil {
-            logrus.WithError(err).Error("Failed to delete URL")
-            if firstErr == nil {
-                firstErr = err 
-            }
-        }
-    }
-    return firstErr
+    return nil
 }
 
 func (s *Service) Ping(ctx context.Context) error {
