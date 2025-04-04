@@ -13,16 +13,24 @@ type DatabaseStorage struct {
 	conn *pgx.Conn
 }
 
-func NewPostgresStorage(dsn string) (*DatabaseStorage, error) { 
+func NewPostgresStorage(dsn string) (*DatabaseStorage, error) {
 	conn, err := pgx.Connect(context.Background(), dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
+
+	_, err = conn.Exec(context.Background(), CreateURLsTable)
+	if err != nil {
+		conn.Close(context.Background())
+		return nil, fmt.Errorf("failed to create urls table: %w", err)
+	}
+
+	logrus.Info("Database storage initialized successfully")
 	return &DatabaseStorage{conn: conn}, nil
 }
 
 func (db *DatabaseStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
-	_, err := db.conn.Exec(ctx, "INSERT INTO urls (short_id, original_url, user_id) VALUES ($1, $2, $3) ON CONFLICT (original_url) DO NOTHING", shortID, originalURL, userID)
+	_, err := db.conn.Exec(ctx, InsertURL, shortID, originalURL, userID)
 	if err != nil {
 		return fmt.Errorf("failed to save URL: %w", err)
 	}
@@ -31,7 +39,7 @@ func (db *DatabaseStorage) Save(ctx context.Context, shortID, originalURL, userI
 
 func (db *DatabaseStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	var shortID string
-	err := db.conn.QueryRow(ctx, "SELECT short_id FROM urls WHERE original_url = $1 AND deleted = false", originalURL).Scan(&shortID)
+	err := db.conn.QueryRow(ctx, SelectByOriginalURL, originalURL).Scan(&shortID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return "", nil
@@ -43,7 +51,7 @@ func (db *DatabaseStorage) FindByOriginalURL(ctx context.Context, originalURL st
 
 func (db *DatabaseStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	var originalURL string
-	err := db.conn.QueryRow(ctx, "SELECT original_url FROM urls WHERE short_id = $1 AND deleted = false", shortID).Scan(&originalURL)
+	err := db.conn.QueryRow(ctx, SelectByShortID, shortID).Scan(&originalURL)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return "", false
@@ -55,7 +63,7 @@ func (db *DatabaseStorage) Get(ctx context.Context, shortID string) (string, boo
 }
 
 func (db *DatabaseStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
-	rows, err := db.conn.Query(ctx, "SELECT short_id, original_url FROM urls WHERE user_id = $1 AND deleted = false", userID)
+	rows, err := db.conn.Query(ctx, SelectByUserID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query URLs: %w", err)
 	}
@@ -63,8 +71,9 @@ func (db *DatabaseStorage) GetURLsByUserID(ctx context.Context, userID string) (
 
 	var urls []models.UserURL
 	for rows.Next() {
-		var shortID, originalURL string
-		if err := rows.Scan(&shortID, &originalURL); err != nil {
+		var shortID, originalURL, userID string
+		var isDeleted bool
+		if err := rows.Scan(&shortID, &originalURL, &userID, &isDeleted); err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 		urls = append(urls, models.UserURL{ShortURL: shortID, OriginalURL: originalURL})
@@ -84,7 +93,7 @@ func (db *DatabaseStorage) SaveBatch(ctx context.Context, batch map[string]strin
 	defer tx.Rollback(ctx)
 
 	for shortID, originalURL := range batch {
-		_, err := tx.Exec(ctx, "INSERT INTO urls (short_id, original_url, user_id) VALUES ($1, $2, $3) ON CONFLICT (original_url) DO NOTHING", shortID, originalURL, userID)
+		_, err := tx.Exec(ctx, InsertURLBatch, shortID, originalURL, userID)
 		if err != nil {
 			return fmt.Errorf("failed to save batch URL: %w", err)
 		}
@@ -97,7 +106,7 @@ func (db *DatabaseStorage) SaveBatch(ctx context.Context, batch map[string]strin
 }
 
 func (db *DatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
-	_, err := db.conn.Exec(ctx, "UPDATE urls SET deleted = true WHERE short_id = ANY($1) AND user_id = $2", shortIDs, userID)
+	_, err := db.conn.Exec(ctx, UpdateDeleteURLs, shortIDs, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete URLs: %w", err)
 	}
