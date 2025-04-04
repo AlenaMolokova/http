@@ -35,25 +35,27 @@ func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models
 
 func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (models.ShortenResult, error) {
 	existingShortID, err := s.saver.FindByOriginalURL(ctx, originalURL)
-	if err == nil && existingShortID != "" {
-		return models.ShortenResult{
-			ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, existingShortID),
-			IsNew:    false,
-		}, nil
-	}
-	if err != nil {
-		return models.ShortenResult{}, fmt.Errorf("ошибка при поиске URL: %w", err)
-	}
+    if err != nil {
+        logrus.WithError(err).Error("Error finding URL")
+        return models.ShortenResult{}, fmt.Errorf("ошибка при поиске URL: %w", err)
+    }
+    if existingShortID != "" {
+        return models.ShortenResult{
+            ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, existingShortID),
+            IsNew:    false,
+        }, nil
+    }
 
-	shortID := s.generator.Generate()
-	if err := s.saver.Save(ctx, shortID, originalURL, userID); err != nil {
-		return models.ShortenResult{}, fmt.Errorf("ошибка сохранения URL: %w", err)
-	}
+    shortID := s.generator.Generate()
+    if err := s.saver.Save(ctx, shortID, originalURL, userID); err != nil {
+        logrus.WithError(err).Error("Error saving URL")
+        return models.ShortenResult{}, fmt.Errorf("ошибка сохранения URL: %w", err)
+    }
 
-	return models.ShortenResult{
-		ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, shortID),
-		IsNew:    true,
-	}, nil
+    return models.ShortenResult{
+        ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, shortID),
+        IsNew:    true,
+    }, nil
 }
 
 func (s *Service) ShortenBatch(ctx context.Context, items []models.BatchShortenRequest, userID string) ([]models.BatchShortenResponse, error) {
@@ -98,24 +100,28 @@ func (s *Service) GetURLsByUserID(ctx context.Context, userID string) ([]models.
 }
 
 func (s *Service) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
-	results := make(chan error, len(shortIDs))
-	workers := make(chan struct{}, 4)
+	errChan := make(chan error, len(shortIDs))
+    workers := make(chan struct{}, 4)
 
-	for _, shortID := range shortIDs {
-		workers <- struct{}{}
-		go func(id string) {
-			defer func() { <-workers }()
-			err := s.deleter.DeleteURLs(ctx, []string{id}, userID)
-			results <- err
-		}(shortID)
-	}
+    for _, shortID := range shortIDs {
+        workers <- struct{}{}
+        go func(id string) {
+            defer func() { <-workers }()
+            err := s.deleter.DeleteURLs(ctx, []string{id}, userID)
+            errChan <- err
+        }(shortID)
+    }
 
-	for range shortIDs {
-		if err := <-results; err != nil {
-			logrus.WithError(err).Error("Failed to delete URL")
-		}
-	}
-	return nil
+    var firstErr error
+    for range shortIDs {
+        if err := <-errChan; err != nil {
+            logrus.WithError(err).Error("Failed to delete URL")
+            if firstErr == nil {
+                firstErr = err 
+            }
+        }
+    }
+    return firstErr
 }
 
 func (s *Service) Ping(ctx context.Context) error {
