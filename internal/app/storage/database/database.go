@@ -3,13 +3,10 @@ package database
 import (
 	"context"
 	"database/sql"
-	"errors"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5/pgconn"
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/sirupsen/logrus"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type PostgresStorage struct {
@@ -22,76 +19,74 @@ func NewPostgresStorage(dsn string) (*PostgresStorage, error) {
 		return nil, err
 	}
 
-	err = db.Ping()
-	if err != nil {
+	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, err
 	}
 
-	_, err = db.Exec(createTableQuery)
+	_, err = db.Exec(CreateURLsTable)
 	if err != nil {
+		db.Close()
 		return nil, err
 	}
 
 	return &PostgresStorage{db: db}, nil
 }
 
-func (s *PostgresStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
-	_, err := s.db.ExecContext(ctx, insertURLQuery, shortID, originalURL, userID)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return nil
-		}
-		return err
-	}
-	return nil
+func (ps *PostgresStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
+	_, err := ps.db.ExecContext(ctx, InsertURL, shortID, originalURL, userID)
+	return err
 }
 
-func (s *PostgresStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
-	for shortID, originalURL := range items {
-		_, err := s.db.ExecContext(ctx, insertURLQuery, shortID, originalURL, userID)
-		if err != nil {
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-				continue
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *PostgresStorage) Get(ctx context.Context, shortID string) (string, bool) {
-	var originalURL string
-	var isDeleted bool
-	err := s.db.QueryRowContext(ctx, selectByShortIDQuery, shortID).Scan(&originalURL, &isDeleted)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false
-		}
-		logrus.WithError(err).Error("Failed to get URL by shortID")
-		return "", false
-	}
-	if isDeleted {
-		return "", false
-	}
-	return originalURL, true
-}
-
-func (s *PostgresStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
+func (ps *PostgresStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	var shortID string
-	err := s.db.QueryRowContext(ctx, selectByOriginalURLQuery, originalURL).Scan(&shortID)
+	err := ps.db.QueryRowContext(ctx, SelectByOriginalURL, originalURL).Scan(&shortID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", nil
-		}
 		return "", err
 	}
 	return shortID, nil
 }
 
-func (s *PostgresStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
-	rows, err := s.db.QueryContext(ctx, selectByUserIDQuery, userID)
+func (ps *PostgresStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
+	tx, err := ps.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, InsertURLBatch)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for shortID, originalURL := range items {
+		if _, err := stmt.ExecContext(ctx, shortID, originalURL, userID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (ps *PostgresStorage) Get(ctx context.Context, shortID string) (string, bool) {
+	var originalURL string
+	err := ps.db.QueryRowContext(ctx, SelectByShortID, shortID).Scan(&originalURL)
+	if err == sql.ErrNoRows {
+		return "", false
+	}
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get URL")
+		return "", false
+	}
+	return originalURL, true
+}
+
+func (ps *PostgresStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
+	rows, err := ps.db.QueryContext(ctx, SelectByUserID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,21 +95,19 @@ func (s *PostgresStorage) GetURLsByUserID(ctx context.Context, userID string) ([
 	var urls []models.UserURL
 	for rows.Next() {
 		var url models.UserURL
-		if err := rows.Scan(&url.ShortURL, &url.OriginalURL, &url.IsDeleted); err != nil {
-			logrus.WithError(err).Error("Failed to scan URL row")
+		if err := rows.Scan(&url.ShortURL, &url.OriginalURL, &url.UserID, &url.IsDeleted); err != nil {
 			return nil, err
 		}
 		urls = append(urls, url)
 	}
 	return urls, nil
-
 }
 
-func (s *PostgresStorage) Ping(ctx context.Context) error {
-	return s.db.PingContext(ctx)
-}
-
-func (s *PostgresStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
-	_, err := s.db.ExecContext(ctx, updateDeletedQuery, shortIDs, userID)
+func (ps *PostgresStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
+	_, err := ps.db.ExecContext(ctx, UpdateDeleteURLs, shortIDs, userID)
 	return err
+}
+
+func (ps *PostgresStorage) Ping(ctx context.Context) error {
+	return ps.db.PingContext(ctx)
 }

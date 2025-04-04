@@ -3,12 +3,9 @@ package main
 import (
 	"net/http"
 
+	"github.com/AlenaMolokova/http/internal/app"
 	"github.com/AlenaMolokova/http/internal/app/config"
-	"github.com/AlenaMolokova/http/internal/app/generator"
-	"github.com/AlenaMolokova/http/internal/app/handler"
 	"github.com/AlenaMolokova/http/internal/app/router"
-	"github.com/AlenaMolokova/http/internal/app/service"
-	"github.com/AlenaMolokova/http/internal/app/storage"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,26 +14,15 @@ func main() {
 	logrus.SetLevel(logrus.InfoLevel)
 
 	cfg := config.NewConfig()
+	logrus.WithField("config", cfg).Info("Configuration loaded")
 
-	urlStorage, err := storage.NewStorage(cfg.DatabaseDSN, cfg.FileStoragePath)
+	appInstance, err := app.NewApp(cfg)
 	if err != nil {
-		logrus.WithError(err).Fatal("Не удалось инициализировать хранилище")
+		logrus.WithError(err).Fatal("Не удалось инициализировать приложение")
 	}
+	logrus.Info("Application initialized")
 
-	urlGenerator := generator.NewGenerator(8)
-	urlService := service.NewService(
-		urlStorage.Saver,
-		urlStorage.BatchSaver,
-		urlStorage.Getter,
-		urlStorage.Fetcher,
-		urlStorage.Deleter,
-		urlStorage.Pinger,
-		urlGenerator,
-		cfg.BaseURL,
-	)
-
-	urlHandler := handler.NewURLHandler(urlService, urlService, urlService, urlService, urlService, cfg.BaseURL)
-	r := router.NewRouter(urlHandler)
+	r := router.NewRouter(appInstance.Handler)
 
 	server := &http.Server{
 		Addr:    cfg.ServerAddress,
@@ -47,7 +33,8 @@ func main() {
 		"base_url": cfg.BaseURL,
 	}).Info("Starting server")
 
-	if err := server.ListenAndServe(); err != nil {
-		logrus.Fatal(err)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logrus.WithError(err).Fatal("Failed to start server")
 	}
+	logrus.Info("Server is running")
 }

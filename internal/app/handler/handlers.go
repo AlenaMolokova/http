@@ -9,31 +9,32 @@ import (
 
 	"github.com/AlenaMolokova/http/internal/app/auth"
 	"github.com/AlenaMolokova/http/internal/app/models"
-	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
 
 type ShortenHandler struct {
-	shortener service.Shortener
+	shortener models.URLShortener
+	batch     models.BatchURLShortener
+	baseURL   string
 }
 
 type RedirectHandler struct {
-	redirector service.URLGetter
-	fetcher    service.URLFetcher
+	redirector models.URLGetter
+	fetcher    models.URLFetcher
 	baseURL    string
 }
 
 type UserURLsHandler struct {
-	fetcher service.URLFetcher
+	fetcher models.URLFetcher
 }
 
 type DeleteHandler struct {
-	deleter service.URLDeleter
+	deleter models.URLDeleter
 }
 
 type PingHandler struct {
-	pinger service.Pinger
+	pinger models.Pinger
 }
 
 type URLHandler struct {
@@ -44,29 +45,29 @@ type URLHandler struct {
 	ping     *PingHandler
 }
 
-func NewShortenHandler(shortener service.Shortener) *ShortenHandler {
-	return &ShortenHandler{shortener}
+func NewShortenHandler(shortener models.URLShortener, batch models.BatchURLShortener, baseURL string) *ShortenHandler {
+	return &ShortenHandler{shortener, batch, baseURL}
 }
 
-func NewRedirectHandler(redirector service.URLGetter, fetcher service.URLFetcher, baseURL string) *RedirectHandler {
+func NewRedirectHandler(redirector models.URLGetter, fetcher models.URLFetcher, baseURL string) *RedirectHandler {
 	return &RedirectHandler{redirector, fetcher, baseURL}
 }
 
-func NewUserURLsHandler(fetcher service.URLFetcher) *UserURLsHandler {
+func NewUserURLsHandler(fetcher models.URLFetcher) *UserURLsHandler {
 	return &UserURLsHandler{fetcher}
 }
 
-func NewDeleteHandler(deleter service.URLDeleter) *DeleteHandler {
+func NewDeleteHandler(deleter models.URLDeleter) *DeleteHandler {
 	return &DeleteHandler{deleter}
 }
 
-func NewPingHandler(pinger service.Pinger) *PingHandler {
+func NewPingHandler(pinger models.Pinger) *PingHandler {
 	return &PingHandler{pinger}
 }
 
-func NewURLHandler(shortener service.Shortener, getter service.URLGetter, fetcher service.URLFetcher, deleter service.URLDeleter, pinger service.Pinger, baseURL string) *URLHandler {
+func NewURLHandler(shortener models.URLShortener, batch models.BatchURLShortener, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, baseURL string) *URLHandler {
 	return &URLHandler{
-		shorten:  NewShortenHandler(shortener),
+		shorten:  NewShortenHandler(shortener, batch, baseURL),
 		redirect: NewRedirectHandler(getter, fetcher, baseURL),
 		userURLs: NewUserURLsHandler(fetcher),
 		delete:   NewDeleteHandler(deleter),
@@ -75,8 +76,12 @@ func NewURLHandler(shortener service.Shortener, getter service.URLGetter, fetche
 }
 
 func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
+	logrus.Info("Handling shorten request")
+	ctx := r.Context()
+
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
+		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
 		userID = auth.GenerateUserID()
 		auth.SetUserIDCookie(w, userID)
 	}
@@ -107,7 +112,6 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ctx := r.Context()
 	result, err := h.shortener.ShortenURL(ctx, originalURL, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to shorten URL")
@@ -121,149 +125,15 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 	} else {
 		w.WriteHeader(http.StatusConflict)
 	}
-	w.Write([]byte(result.ShortURL))
+	if _, err := w.Write([]byte(result.ShortURL)); err != nil {
+		logrus.WithError(err).Error("Failed to write response")
+	}
 }
 
 func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
-	userID, err := auth.GetUserIDFromCookie(r)
-	if err != nil {
-		userID = auth.GenerateUserID()
-		auth.SetUserIDCookie(w, userID)
-	}
-
-	var req models.ShortenRequest
-	if r.Body == nil {
-		http.Error(w, "Empty request body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-
-	w.Header().Set("Content-Type", "application/json")
-
-	err = json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		logrus.WithError(err).Error("Invalid JSON format")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
-		return
-	}
-
-	if req.URL == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
-		return
-	}
-
-	if _, err := url.Parse(req.URL); err != nil {
-		logrus.WithError(err).Error("Invalid URL format")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
-		return
-	}
-
+	logrus.Info("Handling shorten JSON request")
 	ctx := r.Context()
-	result, err := h.shortener.ShortenURL(ctx, req.URL, userID)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to shorten URL")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"})
-		return
-	}
 
-	resp := models.ShortenResponse{Result: result.ShortURL}
-	if result.IsNew {
-		w.WriteHeader(http.StatusCreated)
-	} else {
-		w.WriteHeader(http.StatusConflict)
-	}
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
-	userID, err := auth.GetUserIDFromCookie(r)
-	if err != nil {
-		userID = auth.GenerateUserID()
-		auth.SetUserIDCookie(w, userID)
-	}
-
-	var req []models.BatchShortenRequest
-	if r.Body == nil {
-		http.Error(w, "Empty request body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-
-	w.Header().Set("Content-Type", "application/json")
-
-	err = json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		logrus.WithError(err).Error("Invalid JSON format")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
-		return
-	}
-
-	if len(req) == 0 {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"})
-		return
-	}
-
-	for _, item := range req {
-		if item.OriginalURL == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
-			return
-		}
-		if _, err := url.Parse(item.OriginalURL); err != nil {
-			logrus.WithError(err).Error("Invalid URL format")
-			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
-			return
-		}
-	}
-
-	ctx := r.Context()
-	resp, err := h.shortener.ShortenBatch(ctx, req, userID)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to shorten batch")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"})
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id := vars["id"]
-
-	logrus.WithFields(logrus.Fields{
-		"id":     id,
-		"method": r.Method,
-		"uri":    r.RequestURI,
-	}).Info("Handling redirect request")
-
-	ctx := r.Context()
-	originalURL, found := h.redirector.Get(ctx, id)
-	if !found {
-		logrus.WithField("id", id).Warn("URL not found or deleted")
-		http.Error(w, "Gone", http.StatusGone)
-		return
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"id":          id,
-		"redirect_to": originalURL,
-	}).Info("Redirecting to original URL")
-
-	w.Header().Set("Location", originalURL)
-	w.WriteHeader(http.StatusTemporaryRedirect)
-}
-
-func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
@@ -271,7 +141,162 @@ func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Reque
 		auth.SetUserIDCookie(w, userID)
 	}
 
+	if r.Body == nil {
+		http.Error(w, "Empty request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var req models.ShortenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logrus.WithError(err).Error("Invalid JSON format")
+		w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	if req.URL == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	if _, err := url.Parse(req.URL); err != nil {
+		logrus.WithError(err).Error("Invalid URL format")
+		w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	result, err := h.shortener.ShortenURL(ctx, req.URL, userID)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to shorten URL")
+		w.WriteHeader(http.StatusInternalServerError)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	resp := models.ShortenResponse{Result: result.ShortURL}
+	if result.IsNew {
+		w.WriteHeader(http.StatusCreated) 
+	} else {
+		w.WriteHeader(http.StatusConflict)
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logrus.WithError(err).Error("Failed to encode response")
+	}
+}
+
+func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
+	logrus.Info("Handling batch shorten request")
 	ctx := r.Context()
+
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
+		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
+	}
+
+	if r.Body == nil {
+		http.Error(w, "Empty request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	var req []models.BatchShortenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logrus.WithError(err).Error("Invalid JSON format")
+		w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	if len(req) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	for _, item := range req {
+		if item.OriginalURL == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"}); err != nil {
+				logrus.WithError(err).Error("Failed to encode error response")
+			}
+			return
+		}
+		if _, err := url.Parse(item.OriginalURL); err != nil {
+			logrus.WithError(err).Error("Invalid URL format")
+			w.WriteHeader(http.StatusBadRequest)
+			if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"}); err != nil {
+				logrus.WithError(err).Error("Failed to encode error response")
+			}
+			return
+		}
+	}
+
+	resp, err := h.batch.ShortenBatch(ctx, req, userID)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to shorten batch")
+		w.WriteHeader(http.StatusInternalServerError)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"}); err != nil {
+			logrus.WithError(err).Error("Failed to encode error response")
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logrus.WithError(err).Error("Failed to encode response")
+	}
+}
+
+func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
+	logrus.Info("Handling redirect request")
+	ctx := r.Context()
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	originalURL, found := h.redirector.Get(ctx, id)
+	if !found {
+		logrus.WithField("id", id).Warn("URL not found or deleted")
+		http.Error(w, "Gone", http.StatusGone)
+		return
+	}
+
+	w.Header().Set("Location", originalURL)
+	w.WriteHeader(http.StatusTemporaryRedirect)
+}
+
+func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
+	logrus.Info("Handling get user URLs request")
+	ctx := r.Context()
+
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
+		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
+	}
+
 	urls, err := h.fetcher.GetURLsByUserID(ctx, userID)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get user URLs")
@@ -289,11 +314,13 @@ func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Reque
 	if err := json.NewEncoder(w).Encode(urls); err != nil {
 		logrus.WithError(err).Error("Failed to encode user URLs")
 		http.Error(w, "Failed to encode user URLs", http.StatusInternalServerError)
-		return
 	}
 }
 
 func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
+	logrus.Info("Handling delete URLs request")
+	ctx := r.Context()
+
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
 		logrus.WithError(err).Warn("No valid cookie found, unauthorized")
@@ -314,7 +341,6 @@ func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx := r.Context()
 	if err := h.deleter.DeleteURLs(ctx, shortIDs, userID); err != nil {
 		logrus.WithError(err).Error("Failed to delete URLs")
 		http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
@@ -325,13 +351,17 @@ func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
+	logrus.Info("Handling ping request")
 	ctx := r.Context()
+
 	err := h.pinger.Ping(ctx)
 	if err != nil {
 		if err.Error() == "file storage does not support database connection check" ||
 			err.Error() == "memory storage does not support database connection check" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Storage does not require database connection"))
+			if _, err := w.Write([]byte("Storage does not require database connection")); err != nil {
+				logrus.WithError(err).Error("Failed to write response")
+			}
 			return
 		}
 		logrus.WithError(err).Error("Database ping failed")
@@ -339,7 +369,9 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Database connection is OK"))
+	if _, err := w.Write([]byte("Database connection is OK")); err != nil {
+		logrus.WithError(err).Error("Failed to write response")
+	}
 }
 
 func (h *URLHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
