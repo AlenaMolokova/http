@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.com/AlenaMolokova/http/internal/app/service" 
+	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/AlenaMolokova/http/internal/app/storage/database"
 	"github.com/AlenaMolokova/http/internal/app/storage/file"
 	"github.com/AlenaMolokova/http/internal/app/storage/memory"
@@ -9,23 +9,19 @@ import (
 )
 
 type Storage struct {
-	Saver      service.URLSaver
-	BatchSaver service.URLBatchSaver
-	Getter     service.URLGetter
-	Fetcher    service.URLFetcher
-	Deleter    service.URLDeleter
-	Pinger     service.Pinger
+	impl interface{}
 }
 
 func NewStorage(databaseDSN, fileStoragePath string) (*Storage, error) {
 	var impl interface{}
+
 	if databaseDSN != "" {
 		dbStorage, err := database.NewPostgresStorage(databaseDSN)
 		if err == nil {
 			logrus.Info("Используется хранилище PostgreSQL")
 			impl = dbStorage
 		} else {
-			logrus.WithError(err).Warn("Не удалось использовать PostgreSQL")
+			logrus.WithError(err).Warn("Не удалось использовать PostgreSQL, переходим к следующему варианту")
 		}
 	}
 
@@ -35,7 +31,7 @@ func NewStorage(databaseDSN, fileStoragePath string) (*Storage, error) {
 			logrus.WithField("file", fileStoragePath).Info("Используется файловое хранилище")
 			impl = fileStorage
 		} else {
-			logrus.WithError(err).Warn("Не удалось использовать файловое хранилище")
+			logrus.WithError(err).Warn("Не удалось использовать файловое хранилище, переходим к памяти")
 		}
 	}
 
@@ -44,12 +40,29 @@ func NewStorage(databaseDSN, fileStoragePath string) (*Storage, error) {
 		impl = memory.NewMemoryStorage()
 	}
 
-	return &Storage{
-		Saver:      impl.(service.URLSaver),
-		BatchSaver: impl.(service.URLBatchSaver),
-		Getter:     impl.(service.URLGetter),
-		Fetcher:    impl.(service.URLFetcher),
-		Deleter:    impl.(service.URLDeleter),
-		Pinger:     impl.(service.Pinger),
-	}, nil
+	return &Storage{impl: impl}, nil
+}
+
+func (s *Storage) AsURLSaver() models.URLSaver {
+	return s.impl.(models.URLSaver)
+}
+
+func (s *Storage) AsURLBatchSaver() models.URLBatchSaver {
+	return s.impl.(models.URLBatchSaver)
+}
+
+func (s *Storage) AsURLGetter() models.URLGetter {
+	return s.impl.(models.URLGetter)
+}
+
+func (s *Storage) AsURLFetcher() models.URLFetcher {
+	return s.impl.(models.URLFetcher)
+}
+
+func (s *Storage) AsURLDeleter() models.URLDeleter {
+	return s.impl.(models.URLDeleter)
+}
+
+func (s *Storage) AsPinger() models.Pinger {
+	return s.impl.(models.Pinger)
 }

@@ -3,26 +3,17 @@ package router
 import (
 	"net/http"
 
+	"github.com/AlenaMolokova/http/internal/app/handler"
+	"github.com/AlenaMolokova/http/internal/app/middleware"
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
-	"github.com/AlenaMolokova/http/internal/app/middleware"
 )
 
-type URLHandler interface {
-	HandleShortenURL(w http.ResponseWriter, r *http.Request)
-	HandleShortenURLJSON(w http.ResponseWriter, r *http.Request)
-	HandleBatchShortenURL(w http.ResponseWriter, r *http.Request)
-	HandleRedirect(w http.ResponseWriter, r *http.Request)
-	HandlePing(w http.ResponseWriter, r *http.Request)
-	HandleGetUserURLs(w http.ResponseWriter, r *http.Request)
-	HandleDeleteURLs(w http.ResponseWriter, r *http.Request)
-}
-
 type Router struct {
-	handler URLHandler
+	handler *handler.URLHandler 
 }
 
-func NewRouter(handler URLHandler) *Router {
+func NewRouter(handler *handler.URLHandler) *Router {
 	return &Router{
 		handler: handler,
 	}
