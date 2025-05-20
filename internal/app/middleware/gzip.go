@@ -35,7 +35,6 @@ func (g *gzipWriter) Write(p []byte) (int, error) {
 	return g.w.Write(p)
 }
 
-
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		acceptsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
@@ -45,30 +44,30 @@ func GzipMiddleware(next http.Handler) http.Handler {
 
 		if sendsGzip {
 			body := r.Body
-			
+
 			gz, err := gzip.NewReader(body)
 			if err != nil {
 				logrus.WithError(err).Error("Failed to create gzip reader")
 				http.Error(w, "Invalid gzip data", http.StatusBadRequest)
 				return
 			}
-			
+
 			r.Body = &gzipReader{
 				r:  body,
 				gz: gz,
 			}
-			
+
 			if r.Header.Get("Content-Type") == "application/x-gzip" {
 				r.Header.Set("Content-Type", "text/plain")
 			}
-			
+
 			r.Header.Del("Content-Encoding")
 		}
 
 		contentType := w.Header().Get("Content-Type")
-		shouldCompress := acceptsGzip && (contentType == "" || 
-			strings.Contains(contentType, "application/json") || 
-			strings.Contains(contentType, "text/html") || 
+		shouldCompress := acceptsGzip && (contentType == "" ||
+			strings.Contains(contentType, "application/json") ||
+			strings.Contains(contentType, "text/html") ||
 			strings.Contains(contentType, "text/plain"))
 
 		if shouldCompress {

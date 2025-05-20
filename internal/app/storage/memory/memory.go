@@ -85,15 +85,15 @@ func (s *MemoryStorage) GetURLsByUserID(ctx context.Context, userID string) ([]m
 
 func (s *MemoryStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	s.mu.Lock()
-    defer s.mu.Unlock()
+	defer s.mu.Unlock()
 
-    for _, shortID := range shortIDs {
-        if url, exists := s.urls[shortID]; exists && url.UserID == userID {
-            url.IsDeleted = true
-            s.urls[shortID] = url
-        }
-    }
-    return nil
+	for _, shortID := range shortIDs {
+		if url, exists := s.urls[shortID]; exists && url.UserID == userID {
+			url.IsDeleted = true
+			s.urls[shortID] = url
+		}
+	}
+	return nil
 }
 
 func (s *MemoryStorage) Ping(ctx context.Context) error {
