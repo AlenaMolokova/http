@@ -21,3 +21,6 @@ vendor/
 # IDEs directories
 .idea
 .vscode
+
+# Large files (>100MB)
+internal/app/storage/test_urls.json
