@@ -10,7 +10,7 @@ import (
 )
 
 type Router struct {
-	handler *handler.URLHandler 
+	handler *handler.URLHandler
 }
 
 func NewRouter(handler *handler.URLHandler) *Router {
