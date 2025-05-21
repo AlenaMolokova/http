@@ -1,33 +1,40 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
+	"github.com/AlenaMolokova/http/internal/app"
 	"github.com/AlenaMolokova/http/internal/app/config"
-	"github.com/AlenaMolokova/http/internal/app/generator"
-	"github.com/AlenaMolokova/http/internal/app/handler"
 	"github.com/AlenaMolokova/http/internal/app/router"
-	"github.com/AlenaMolokova/http/internal/app/service"
-	"github.com/AlenaMolokova/http/internal/app/storage/memory"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
-	cfg := config.NewConfig()
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetLevel(logrus.InfoLevel)
 
-	urlStorage := memory.NewMemoryStorage()
-	urlGenerator := generator.NewGenerator(8)
-	urlService := service.NewURLService(urlStorage, urlGenerator, cfg.BaseURL)
-	urlHandler := handler.NewHandler(urlService)
-	urlRouter := router.NewRouter(urlHandler)
+	cfg := config.NewConfig()
+	logrus.WithField("config", cfg).Info("Configuration loaded")
+
+	appInstance, err := app.NewApp(cfg)
+	if err != nil {
+		logrus.WithError(err).Fatal("Не удалось инициализировать приложение")
+	}
+	logrus.Info("Application initialized")
+
+	r := router.NewRouter(appInstance.Handler)
 
 	server := &http.Server{
 		Addr:    cfg.ServerAddress,
-		Handler: urlRouter.InitRoutes(),
+		Handler: r.InitRoutes(),
 	}
+	logrus.WithFields(logrus.Fields{
+		"address":  cfg.ServerAddress,
+		"base_url": cfg.BaseURL,
+	}).Info("Starting server")
 
-	log.Printf("Starting server on %s\n", cfg.ServerAddress)
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal(err)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logrus.WithError(err).Fatal("Failed to start server")
 	}
+	logrus.Info("Server is running")
 }
