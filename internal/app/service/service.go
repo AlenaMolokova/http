@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/models"
-	"github.com/sirupsen/logrus"
 )
 
 type Service struct {
@@ -16,8 +16,10 @@ type Service struct {
 	fetcher   models.URLFetcher
 	deleter   models.URLDeleter
 	pinger    models.Pinger
-	generator generator.Generator 
+	generator generator.Generator
 	BaseURL   string
+	cache     map[string][]models.UserURL
+	cacheMu   sync.RWMutex
 }
 
 func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, generator generator.Generator, baseURL string) *Service {
@@ -30,58 +32,57 @@ func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models
 		pinger:    pinger,
 		generator: generator,
 		BaseURL:   baseURL,
+		cache:     make(map[string][]models.UserURL),
 	}
 }
 
 func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (models.ShortenResult, error) {
-	logrus.WithFields(logrus.Fields{
-        "originalURL": originalURL,
-        "userID":      userID,
-    }).Debug("Shortening URL")
-    
-    existingShortID, err := s.saver.FindByOriginalURL(ctx, originalURL)
-    if err != nil {
-        logrus.WithError(err).Error("Error finding URL")
-        return models.ShortenResult{}, fmt.Errorf("error finding URL: %w", err)
-    }
-    if existingShortID != "" {
-        logrus.WithField("shortID", existingShortID).Info("URL already exists")
-        return models.ShortenResult{
-            ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, existingShortID),
-            IsNew:    false,
-        }, nil
-    }
+	existingShortID, err := s.saver.FindByOriginalURL(ctx, originalURL)
+	if err != nil {
+		return models.ShortenResult{}, fmt.Errorf("error finding URL: %w", err)
+	}
+	if existingShortID != "" {
+		return models.ShortenResult{
+			ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, existingShortID),
+			IsNew:    false,
+		}, nil
+	}
 
-    shortID := s.generator.Generate()
-    if shortID == "" {
-        logrus.Error("Generated short ID is empty")
-        return models.ShortenResult{}, fmt.Errorf("failed to generate short ID")
-    }
+	shortID := s.generator.Generate()
+	if shortID == "" {
+		return models.ShortenResult{}, fmt.Errorf("failed to generate short ID")
+	}
 
-    if err := s.saver.Save(ctx, shortID, originalURL, userID); err != nil {
-        logrus.WithError(err).Error("Error saving URL")
-        return models.ShortenResult{}, fmt.Errorf("error saving URL: %w", err)
-    }
+	s.cacheMu.Lock()
+	delete(s.cache, userID)
+	s.cacheMu.Unlock()
 
-    logrus.WithField("shortID", shortID).Info("URL shortened successfully")
-    return models.ShortenResult{
-        ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, shortID),
-        IsNew:    true,
-    }, nil
+	if err := s.saver.Save(ctx, shortID, originalURL, userID); err != nil {
+		return models.ShortenResult{}, fmt.Errorf("error saving URL: %w", err)
+	}
+
+	return models.ShortenResult{
+		ShortURL: fmt.Sprintf("%s/%s", s.BaseURL, shortID),
+		IsNew:    true,
+	}, nil
 }
 
 func (s *Service) ShortenBatch(ctx context.Context, items []models.BatchShortenRequest, userID string) ([]models.BatchShortenResponse, error) {
-	batch := make(map[string]string)
+	batch := make(map[string]string, len(items))
 	for _, item := range items {
 		shortID := s.generator.Generate()
 		batch[shortID] = item.OriginalURL
 	}
 
+	s.cacheMu.Lock()
+	delete(s.cache, userID)
+	s.cacheMu.Unlock()
+
 	if err := s.batch.SaveBatch(ctx, batch, userID); err != nil {
 		return nil, fmt.Errorf("ошибка сохранения пакета URL: %w", err)
 	}
 
-	var resp []models.BatchShortenResponse
+	resp := make([]models.BatchShortenResponse, 0, len(items))
 	for shortID, originalURL := range batch {
 		for _, item := range items {
 			if item.OriginalURL == originalURL {
@@ -101,23 +102,35 @@ func (s *Service) Get(ctx context.Context, shortID string) (string, bool) {
 }
 
 func (s *Service) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
+	s.cacheMu.RLock()
+	cached, ok := s.cache[userID]
+	s.cacheMu.RUnlock()
+	if ok {
+		return cached, nil
+	}
+
 	urls, err := s.fetcher.GetURLsByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("ошибка получения URL пользователя: %w", err)
 	}
+
 	for i := range urls {
 		urls[i].ShortURL = fmt.Sprintf("%s/%s", s.BaseURL, urls[i].ShortURL)
 	}
+
+	s.cacheMu.Lock()
+	s.cache[userID] = urls
+	s.cacheMu.Unlock()
+
 	return urls, nil
 }
 
 func (s *Service) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
-	err := s.deleter.DeleteURLs(ctx, shortIDs, userID)
-    if err != nil {
-        logrus.WithError(err).Error("Failed to delete URLs")
-        return err
-    }
-    return nil
+	s.cacheMu.Lock()
+	delete(s.cache, userID)
+	s.cacheMu.Unlock()
+
+	return s.deleter.DeleteURLs(ctx, shortIDs, userID)
 }
 
 func (s *Service) Ping(ctx context.Context) error {
