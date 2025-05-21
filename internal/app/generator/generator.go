@@ -2,6 +2,7 @@ package generator
 
 import (
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -10,9 +11,12 @@ type Generator interface {
 }
 
 type SimpleGenerator struct {
-	letters string
-	length  int
-	rnd     *rand.Rand
+	letters   string
+	length    int
+	rnd       *rand.Rand
+	mu        sync.Mutex
+	bufferLen int
+	buffer    []byte
 }
 
 func NewGenerator(length int) Generator {
@@ -20,13 +24,16 @@ func NewGenerator(length int) Generator {
 		letters: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
 		length:  length,
 		rnd:     rand.New(rand.NewSource(time.Now().UnixNano())),
+		buffer:  make([]byte, length),
 	}
 }
 
 func (g *SimpleGenerator) Generate() string {
-	id := make([]byte, g.length)
-	for i := range id {
-		id[i] = g.letters[g.rnd.Intn(len(g.letters))]
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for i := range g.buffer {
+		g.buffer[i] = g.letters[g.rnd.Intn(len(g.letters))]
 	}
-	return string(id)
+	return string(g.buffer)
 }
