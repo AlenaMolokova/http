@@ -12,11 +12,21 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// App представляет собой основную структуру приложения,
+// содержащую обработчик URL и сервисный слой.
 type App struct {
 	Handler *handler.URLHandler
 	Service *service.Service
 }
 
+// GenerateTestLoad генерирует тестовую нагрузку, создавая указанное
+// количество сокращенных URL для тестового пользователя.
+//
+// Параметры:
+//   - count: количество URL для генерации
+//
+// Метод также выполняет операции чтения, чтобы проверить
+// корректность сохранения и получения данных.
 func (a *App) GenerateTestLoad(count int) {
 	ctx := context.Background()
 	userID := "test-user"
@@ -63,6 +73,18 @@ func min(a, b int) int {
 	return b
 }
 
+// NewApp создает и инициализирует новый экземпляр приложения.
+//
+// Параметры:
+//   - cfg: конфигурация приложения
+//
+// Возвращает:
+//   - указатель на новый экземпляр App
+//   - ошибку, если произошла проблема при инициализации
+//
+// Функция настраивает все необходимые компоненты приложения,
+// включая хранилище URL, генератор коротких идентификаторов,
+// сервисный слой и обработчики запросов.
 func NewApp(cfg *config.Config) (*App, error) {
 	urlStorage, err := storage.NewStorage(cfg.DatabaseDSN, cfg.FileStoragePath)
 	if err != nil {

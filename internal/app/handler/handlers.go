@@ -12,30 +12,36 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// ShortenHandler обрабатывает запросы на сокращение URL.
 type ShortenHandler struct {
 	shortener models.URLShortener
 	batch     models.BatchURLShortener
 	baseURL   string
 }
 
+// RedirectHandler обрабатывает запросы на перенаправление по короткому URL.
 type RedirectHandler struct {
 	redirector models.URLGetter
 	fetcher    models.URLFetcher
 	baseURL    string
 }
 
+// UserURLsHandler обрабатывает запросы на получение URL, принадлежащих пользователю.
 type UserURLsHandler struct {
 	fetcher models.URLFetcher
 }
 
+// DeleteHandler обрабатывает запросы на удаление URL.
 type DeleteHandler struct {
 	deleter models.URLDeleter
 }
 
+// PingHandler обрабатывает запросы на проверку соединения с хранилищем.
 type PingHandler struct {
 	pinger models.Pinger
 }
 
+// URLHandler объединяет все обработчики URL и предоставляет единый интерфейс для обработки различных запросов.
 type URLHandler struct {
 	shorten  *ShortenHandler
 	redirect *RedirectHandler
@@ -44,26 +50,78 @@ type URLHandler struct {
 	ping     *PingHandler
 }
 
+// NewShortenHandler создает новый обработчик для сокращения URL.
+//
+// Параметры:
+//   - shortener: сервис для сокращения отдельных URL
+//   - batch: сервис для пакетного сокращения URL
+//   - baseURL: базовый URL сервиса
+//
+// Возвращает:
+//   - *ShortenHandler: новый обработчик
 func NewShortenHandler(shortener models.URLShortener, batch models.BatchURLShortener, baseURL string) *ShortenHandler {
 	return &ShortenHandler{shortener, batch, baseURL}
 }
 
+// NewRedirectHandler создает новый обработчик для перенаправления по коротким URL.
+//
+// Параметры:
+//   - redirector: сервис для получения оригинальных URL
+//   - fetcher: сервис для получения URL пользователя
+//   - baseURL: базовый URL сервиса
+//
+// Возвращает:
+//   - *RedirectHandler: новый обработчик
 func NewRedirectHandler(redirector models.URLGetter, fetcher models.URLFetcher, baseURL string) *RedirectHandler {
 	return &RedirectHandler{redirector, fetcher, baseURL}
 }
 
+// NewUserURLsHandler создает новый обработчик для получения URL пользователя.
+//
+// Параметры:
+//   - fetcher: сервис для получения URL пользователя
+//
+// Возвращает:
+//   - *UserURLsHandler: новый обработчик
 func NewUserURLsHandler(fetcher models.URLFetcher) *UserURLsHandler {
 	return &UserURLsHandler{fetcher}
 }
 
+// NewDeleteHandler создает новый обработчик для удаления URL.
+//
+// Параметры:
+//   - deleter: сервис для удаления URL
+//
+// Возвращает:
+//   - *DeleteHandler: новый обработчик
 func NewDeleteHandler(deleter models.URLDeleter) *DeleteHandler {
 	return &DeleteHandler{deleter}
 }
 
+// NewPingHandler создает новый обработчик для проверки соединения с хранилищем.
+//
+// Параметры:
+//   - pinger: сервис для проверки соединения
+//
+// Возвращает:
+//   - *PingHandler: новый обработчик
 func NewPingHandler(pinger models.Pinger) *PingHandler {
 	return &PingHandler{pinger}
 }
 
+// NewURLHandler создает новый комбинированный обработчик для всех операций с URL.
+//
+// Параметры:
+//   - shortener: сервис для сокращения URL
+//   - batch: сервис для пакетного сокращения URL
+//   - getter: сервис для получения оригинальных URL
+//   - fetcher: сервис для получения URL пользователя
+//   - deleter: сервис для удаления URL
+//   - pinger: сервис для проверки соединения с хранилищем
+//   - baseURL: базовый URL сервиса
+//
+// Возвращает:
+//   - *URLHandler: новый комбинированный обработчик
 func NewURLHandler(shortener models.URLShortener, batch models.BatchURLShortener, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, baseURL string) *URLHandler {
 	return &URLHandler{
 		shorten:  NewShortenHandler(shortener, batch, baseURL),
@@ -74,6 +132,16 @@ func NewURLHandler(shortener models.URLShortener, batch models.BatchURLShortener
 	}
 }
 
+// HandleShortenURL обрабатывает запросы на сокращение URL в текстовом формате.
+// Поддерживает HTTP методы POST.
+// Принимает URL в теле запроса в виде текста.
+// Возвращает сокращенный URL в теле ответа.
+//
+// Коды ответа:
+//   - 201 Created: URL успешно сокращен (новый URL)
+//   - 409 Conflict: URL уже был сокращен ранее
+//   - 400 Bad Request: неверный формат запроса
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -123,6 +191,16 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 	io.WriteString(w, result.ShortURL)
 }
 
+// HandleShortenURLJSON обрабатывает запросы на сокращение URL в формате JSON.
+// Поддерживает HTTP методы POST.
+// Принимает JSON-объект с полем "url" в теле запроса.
+// Возвращает JSON-объект с полем "result", содержащим сокращенный URL.
+//
+// Коды ответа:
+//   - 201 Created: URL успешно сокращен (новый URL)
+//   - 409 Conflict: URL уже был сокращен ранее
+//   - 400 Bad Request: неверный формат запроса
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -176,6 +254,15 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(resp)
 }
 
+// HandleBatchShortenURL обрабатывает запросы на пакетное сокращение URL.
+// Поддерживает HTTP методы POST.
+// Принимает массив JSON-объектов с полями "correlation_id" и "original_url" в теле запроса.
+// Возвращает массив JSON-объектов с полями "correlation_id" и "short_url".
+//
+// Коды ответа:
+//   - 201 Created: URLs успешно сокращены
+//   - 400 Bad Request: неверный формат запроса
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -230,6 +317,13 @@ func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(resp)
 }
 
+// HandleRedirect обрабатывает запросы на перенаправление по короткому URL.
+// Поддерживает HTTP методы GET.
+// Извлекает идентификатор из URL-пути и перенаправляет на оригинальный URL.
+//
+// Коды ответа:
+//   - 307 Temporary Redirect: успешное перенаправление
+//   - 410 Gone: URL был удален или не существует
 func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -246,6 +340,14 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
+// HandleGetUserURLs обрабатывает запросы на получение всех URL, принадлежащих пользователю.
+// Поддерживает HTTP методы GET.
+// Извлекает идентификатор пользователя из cookie и возвращает список его URL.
+//
+// Коды ответа:
+//   - 200 OK: список URL успешно получен
+//   - 204 No Content: у пользователя нет сохраненных URL
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -271,6 +373,16 @@ func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Reque
 	encoder.Encode(urls)
 }
 
+// HandleDeleteURLs обрабатывает запросы на удаление URL.
+// Поддерживает HTTP методы DELETE.
+// Принимает массив идентификаторов URL для удаления в теле запроса.
+// Удаление выполняется асинхронно.
+//
+// Коды ответа:
+//   - 202 Accepted: запрос на удаление принят
+//   - 400 Bad Request: неверный формат запроса
+//   - 401 Unauthorized: пользователь не авторизован
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -300,6 +412,13 @@ func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// HandlePing обрабатывает запросы на проверку соединения с хранилищем данных.
+// Поддерживает HTTP методы GET.
+// Проверяет доступность базы данных.
+//
+// Коды ответа:
+//   - 200 OK: соединение с базой данных установлено или хранилище не требует проверки соединения
+//   - 500 Internal Server Error: ошибка соединения с базой данных
 func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -318,30 +437,37 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Database connection is OK"))
 }
 
+// HandleShortenURL делегирует обработку запроса на сокращение URL в текстовом формате соответствующему обработчику.
 func (h *URLHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	h.shorten.HandleShortenURL(w, r)
 }
 
+// HandleShortenURLJSON делегирует обработку запроса на сокращение URL в формате JSON соответствующему обработчику.
 func (h *URLHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	h.shorten.HandleShortenURLJSON(w, r)
 }
 
+// HandleBatchShortenURL делегирует обработку запроса на пакетное сокращение URL соответствующему обработчику.
 func (h *URLHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
 	h.shorten.HandleBatchShortenURL(w, r)
 }
 
+// HandleRedirect делегирует обработку запроса на перенаправление по короткому URL соответствующему обработчику.
 func (h *URLHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	h.redirect.HandleRedirect(w, r)
 }
 
+// HandleGetUserURLs делегирует обработку запроса на получение URL пользователя соответствующему обработчику.
 func (h *URLHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	h.userURLs.HandleGetUserURLs(w, r)
 }
 
+// HandleDeleteURLs делегирует обработку запроса на удаление URL соответствующему обработчику.
 func (h *URLHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
 	h.delete.HandleDeleteURLs(w, r)
 }
 
+// HandlePing делегирует обработку запроса на проверку соединения с хранилищем данных соответствующему обработчику.
 func (h *URLHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	h.ping.HandlePing(w, r)
 }

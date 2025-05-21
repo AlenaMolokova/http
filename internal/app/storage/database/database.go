@@ -10,10 +10,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// DatabaseStorage представляет хранилище URL-адресов в PostgreSQL базе данных.
+// Предоставляет методы для сохранения, поиска и удаления URL-адресов.
 type DatabaseStorage struct {
 	pool *pgxpool.Pool
 }
 
+// NewPostgresStorage создаёт и инициализирует новое хранилище PostgreSQL.
+// Устанавливает соединение с базой данных по указанной строке подключения (DSN)
+// и создаёт необходимые таблицы, если они ещё не существуют.
+//
+// Параметры:
+//   - dsn: строка подключения к PostgreSQL базе данных.
+//
+// Возвращает:
+//   - указатель на DatabaseStorage при успешной инициализации
+//   - ошибку, если не удалось подключиться к базе данных или создать таблицы
 func NewPostgresStorage(dsn string) (*DatabaseStorage, error) {
 	pool, err := pgxpool.New(context.Background(), dsn)
 	if err != nil {
@@ -30,6 +42,16 @@ func NewPostgresStorage(dsn string) (*DatabaseStorage, error) {
 	return &DatabaseStorage{pool: pool}, nil
 }
 
+// Save сохраняет новый URL в базе данных.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - shortID: сокращенный идентификатор URL
+//   - originalURL: оригинальный URL-адрес
+//   - userID: идентификатор пользователя, который создал сокращение
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить URL
 func (db *DatabaseStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	_, err := db.pool.Exec(ctx, InsertURL, shortID, originalURL, userID)
 	if err != nil {
@@ -38,6 +60,16 @@ func (db *DatabaseStorage) Save(ctx context.Context, shortID, originalURL, userI
 	return nil
 }
 
+// FindByOriginalURL ищет сокращенный идентификатор по оригинальному URL-адресу.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - originalURL: оригинальный URL-адрес для поиска
+//
+// Возвращает:
+//   - сокращенный идентификатор, если URL найден
+//   - пустую строку, если URL не найден
+//   - ошибку, если произошла ошибка при выполнении запроса
 func (db *DatabaseStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	var shortID string
 	err := db.pool.QueryRow(ctx, SelectByOriginalURL, originalURL).Scan(&shortID)
@@ -50,6 +82,15 @@ func (db *DatabaseStorage) FindByOriginalURL(ctx context.Context, originalURL st
 	return shortID, nil
 }
 
+// Get возвращает оригинальный URL-адрес по сокращенному идентификатору.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - shortID: сокращенный идентификатор URL
+//
+// Возвращает:
+//   - оригинальный URL-адрес и true, если сокращение найдено
+//   - пустую строку и false, если сокращение не найдено или произошла ошибка
 func (db *DatabaseStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	var originalURL string
 	err := db.pool.QueryRow(ctx, SelectByShortID, shortID).Scan(&originalURL)
@@ -63,6 +104,15 @@ func (db *DatabaseStorage) Get(ctx context.Context, shortID string) (string, boo
 	return originalURL, true
 }
 
+// GetURLsByUserID возвращает все URL-адреса, созданные указанным пользователем.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - список структур UserURL, содержащих сокращенные и оригинальные URL-адреса
+//   - ошибку, если произошла ошибка при выполнении запроса
 func (db *DatabaseStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	rows, err := db.pool.Query(ctx, SelectByUserID, userID)
 	if err != nil {
@@ -86,6 +136,15 @@ func (db *DatabaseStorage) GetURLsByUserID(ctx context.Context, userID string) (
 	return urls, nil
 }
 
+// SaveBatch сохраняет пакет URL-адресов в базе данных в рамках одной транзакции.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - batch: карта, где ключ - сокращенный идентификатор, значение - оригинальный URL
+//   - userID: идентификатор пользователя, которому принадлежат URL-адреса
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить пакет URL-адресов
 func (db *DatabaseStorage) SaveBatch(ctx context.Context, batch map[string]string, userID string) error {
 	tx, err := db.pool.Begin(ctx)
 	if err != nil {
@@ -106,6 +165,15 @@ func (db *DatabaseStorage) SaveBatch(ctx context.Context, batch map[string]strin
 	return nil
 }
 
+// DeleteURLs помечает указанные URL-адреса как удаленные.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - shortIDs: список сокращенных идентификаторов для удаления
+//   - userID: идентификатор пользователя, которому принадлежат URL-адреса
+//
+// Возвращает:
+//   - ошибку, если не удалось пометить URL-адреса как удаленные
 func (db *DatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	if len(shortIDs) == 0 {
 		return nil
@@ -117,10 +185,21 @@ func (db *DatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, us
 	return nil
 }
 
+// Ping проверяет доступность базы данных.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//
+// Возвращает:
+//   - ошибку, если база данных недоступна
 func (db *DatabaseStorage) Ping(ctx context.Context) error {
 	return db.pool.Ping(ctx)
 }
 
+// Close закрывает соединение с базой данных.
+//
+// Возвращает:
+//   - ошибку, если не удалось корректно закрыть соединение
 func (db *DatabaseStorage) Close() error {
 	db.pool.Close()
 	return nil
