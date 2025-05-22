@@ -1,3 +1,4 @@
+// Package auth предоставляет функции для работы с пользовательской аутентификацией.
 package auth
 
 import (
@@ -13,11 +14,14 @@ import (
 )
 
 // CookiePartKey представляет тип ключа для частей cookie аутентификации.
+// Используется для идентификации различных компонентов cookie (ID и подпись).
 type CookiePartKey string
 
 // ContextKey представляет тип ключа для значений в контексте запроса.
+// Используется для безопасного хранения данных в context.Context.
 type ContextKey string
 
+// Константы для определения частей cookie аутентификации.
 const (
 	// CookiePartID ключ для части cookie, содержащей идентификатор пользователя.
 	CookiePartID CookiePartKey = "id"
@@ -25,6 +29,7 @@ const (
 	CookiePartSign CookiePartKey = "sign"
 )
 
+// Константы для работы с контекстом запроса.
 const (
 	// UserIDKey ключ для хранения идентификатора пользователя в контексте запроса.
 	UserIDKey ContextKey = "userID"
@@ -34,6 +39,7 @@ const (
 // В продакшн-окружении следует заменить на более надежный ключ.
 var SecretKey = []byte("your-secret-key-change-this-in-production")
 
+// Настройки cookie для аутентификации.
 const (
 	// CookieName базовое имя cookie для хранения информации о пользователе.
 	CookieName = "user_id"
