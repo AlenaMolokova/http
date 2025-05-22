@@ -9,16 +9,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Router представляет маршрутизатор запросов для сервиса сокращения URL.
 type Router struct {
-	handler *handler.URLHandler 
+	handler *handler.URLHandler
 }
 
+// NewRouter создает новый экземпляр Router с указанным обработчиком.
+// Параметр handler - обработчик URL, который будет использоваться для обработки запросов.
 func NewRouter(handler *handler.URLHandler) *Router {
 	return &Router{
 		handler: handler,
 	}
 }
 
+// InitRoutes инициализирует маршруты для приложения и возвращает настроенный экземпляр маршрутизатора.
+// Настраивает все доступные эндпоинты, включая обработку сокращения URL, пакетного сокращения,
+// получения URL пользователя, удаления URL, перенаправления и проверки доступности.
 func (r *Router) InitRoutes() *mux.Router {
 	router := mux.NewRouter()
 

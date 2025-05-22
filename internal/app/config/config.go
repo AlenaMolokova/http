@@ -7,13 +7,22 @@ import (
 	"github.com/caarlos0/env/v9"
 )
 
+// Config представляет конфигурацию приложения.
+// Содержит настройки сервера, базовый URL для сокращенных ссылок,
+// путь к файлу хранения и строку подключения к базе данных.
 type Config struct {
-	ServerAddress string `env:"SERVER_ADDRESS" envDefault:"localhost:8080"`
-	BaseURL       string `env:"BASE_URL" envDefault:"http://localhost:8080"`
-	FileStoragePath string `env:"FILE_STORAGE_PATH" envDefault:"urls.json"`
-	DatabaseDSN     string `env:"DATABASE_DSN" envDefault:""`
+	ServerAddress   string `env:"SERVER_ADDRESS" envDefault:"localhost:8080"`  // Адрес HTTP-сервера
+	BaseURL         string `env:"BASE_URL" envDefault:"http://localhost:8080"` // Базовый URL для сокращенных ссылок
+	FileStoragePath string `env:"FILE_STORAGE_PATH" envDefault:"urls.json"`    // Путь к файлу хранения URL
+	DatabaseDSN     string `env:"DATABASE_DSN" envDefault:""`                  // Строка подключения к базе данных
 }
 
+// NewConfig создает и возвращает новый экземпляр конфигурации.
+// Функция загружает настройки из переменных окружения и флагов командной строки.
+// Приоритет имеют значения, указанные через флаги командной строки.
+// В случае ошибки при разборе конфигурации, функция завершает работу программы.
+//
+// Возвращает: указатель на заполненную структуру Config.
 func NewConfig() *Config {
 	cfg := &Config{}
 

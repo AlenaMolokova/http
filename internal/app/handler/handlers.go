@@ -10,33 +10,38 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/auth"
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/gorilla/mux"
-	"github.com/sirupsen/logrus"
 )
 
+// ShortenHandler обрабатывает запросы на сокращение URL.
 type ShortenHandler struct {
 	shortener models.URLShortener
 	batch     models.BatchURLShortener
 	baseURL   string
 }
 
+// RedirectHandler обрабатывает запросы на перенаправление по короткому URL.
 type RedirectHandler struct {
 	redirector models.URLGetter
 	fetcher    models.URLFetcher
 	baseURL    string
 }
 
+// UserURLsHandler обрабатывает запросы на получение URL, принадлежащих пользователю.
 type UserURLsHandler struct {
 	fetcher models.URLFetcher
 }
 
+// DeleteHandler обрабатывает запросы на удаление URL.
 type DeleteHandler struct {
 	deleter models.URLDeleter
 }
 
+// PingHandler обрабатывает запросы на проверку соединения с хранилищем.
 type PingHandler struct {
 	pinger models.Pinger
 }
 
+// URLHandler объединяет все обработчики URL и предоставляет единый интерфейс для обработки различных запросов.
 type URLHandler struct {
 	shorten  *ShortenHandler
 	redirect *RedirectHandler
@@ -45,26 +50,78 @@ type URLHandler struct {
 	ping     *PingHandler
 }
 
+// NewShortenHandler создает новый обработчик для сокращения URL.
+//
+// Параметры:
+//   - shortener: сервис для сокращения отдельных URL
+//   - batch: сервис для пакетного сокращения URL
+//   - baseURL: базовый URL сервиса
+//
+// Возвращает:
+//   - *ShortenHandler: новый обработчик
 func NewShortenHandler(shortener models.URLShortener, batch models.BatchURLShortener, baseURL string) *ShortenHandler {
 	return &ShortenHandler{shortener, batch, baseURL}
 }
 
+// NewRedirectHandler создает новый обработчик для перенаправления по коротким URL.
+//
+// Параметры:
+//   - redirector: сервис для получения оригинальных URL
+//   - fetcher: сервис для получения URL пользователя
+//   - baseURL: базовый URL сервиса
+//
+// Возвращает:
+//   - *RedirectHandler: новый обработчик
 func NewRedirectHandler(redirector models.URLGetter, fetcher models.URLFetcher, baseURL string) *RedirectHandler {
 	return &RedirectHandler{redirector, fetcher, baseURL}
 }
 
+// NewUserURLsHandler создает новый обработчик для получения URL пользователя.
+//
+// Параметры:
+//   - fetcher: сервис для получения URL пользователя
+//
+// Возвращает:
+//   - *UserURLsHandler: новый обработчик
 func NewUserURLsHandler(fetcher models.URLFetcher) *UserURLsHandler {
 	return &UserURLsHandler{fetcher}
 }
 
+// NewDeleteHandler создает новый обработчик для удаления URL.
+//
+// Параметры:
+//   - deleter: сервис для удаления URL
+//
+// Возвращает:
+//   - *DeleteHandler: новый обработчик
 func NewDeleteHandler(deleter models.URLDeleter) *DeleteHandler {
 	return &DeleteHandler{deleter}
 }
 
+// NewPingHandler создает новый обработчик для проверки соединения с хранилищем.
+//
+// Параметры:
+//   - pinger: сервис для проверки соединения
+//
+// Возвращает:
+//   - *PingHandler: новый обработчик
 func NewPingHandler(pinger models.Pinger) *PingHandler {
 	return &PingHandler{pinger}
 }
 
+// NewURLHandler создает новый комбинированный обработчик для всех операций с URL.
+//
+// Параметры:
+//   - shortener: сервис для сокращения URL
+//   - batch: сервис для пакетного сокращения URL
+//   - getter: сервис для получения оригинальных URL
+//   - fetcher: сервис для получения URL пользователя
+//   - deleter: сервис для удаления URL
+//   - pinger: сервис для проверки соединения с хранилищем
+//   - baseURL: базовый URL сервиса
+//
+// Возвращает:
+//   - *URLHandler: новый комбинированный обработчик
 func NewURLHandler(shortener models.URLShortener, batch models.BatchURLShortener, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, baseURL string) *URLHandler {
 	return &URLHandler{
 		shorten:  NewShortenHandler(shortener, batch, baseURL),
@@ -75,69 +132,80 @@ func NewURLHandler(shortener models.URLShortener, batch models.BatchURLShortener
 	}
 }
 
+// HandleShortenURL обрабатывает запросы на сокращение URL в текстовом формате.
+// Поддерживает HTTP методы POST.
+// Принимает URL в теле запроса в виде текста.
+// Возвращает сокращенный URL в теле ответа.
+//
+// Коды ответа:
+//   - 201 Created: URL успешно сокращен (новый URL)
+//   - 409 Conflict: URL уже был сокращен ранее
+//   - 400 Bad Request: неверный формат запроса
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling shorten request")
-    ctx := r.Context()
-
-    userID, err := auth.GetUserIDFromCookie(r)
-    if err != nil {
-        logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
-        userID = auth.GenerateUserID()
-        auth.SetUserIDCookie(w, userID)
-    }
-
-    contentType := r.Header.Get("Content-Type")
-    if contentType != "" && !strings.Contains(contentType, "text/plain") {
-        http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
-        return
-    }
-
-    body, err := io.ReadAll(r.Body)
-    if err != nil {
-        logrus.WithError(err).Error("Failed to read request body")
-        http.Error(w, "Failed to read request body", http.StatusBadRequest)
-        return
-    }
-    defer r.Body.Close()
-
-    originalURL := strings.TrimSpace(string(body))
-    if originalURL == "" {
-        http.Error(w, "Empty URL", http.StatusBadRequest)
-        return
-    }
-
-    if _, err := url.ParseRequestURI(originalURL); err != nil {
-        logrus.WithError(err).Error("Invalid URL format")
-        http.Error(w, "Invalid URL format", http.StatusBadRequest)
-        return
-    }
-
-    result, err := h.shortener.ShortenURL(ctx, originalURL, userID)
-    if err != nil {
-        logrus.WithError(err).Error("Failed to shorten URL")
-        cleanErr := strings.TrimSpace(err.Error())
-        http.Error(w, cleanErr, http.StatusInternalServerError)
-        return
-    }
-
-    w.Header().Set("Content-Type", "text/plain")
-    if result.IsNew {
-        w.WriteHeader(http.StatusCreated)
-    } else {
-        w.WriteHeader(http.StatusConflict)
-    }
-    if _, err := io.WriteString(w, result.ShortURL); err != nil {
-        logrus.WithError(err).Error("Failed to write response")
-    }
-}
-
-func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling shorten JSON request")
 	ctx := r.Context()
 
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
-		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
+		userID = auth.GenerateUserID()
+		auth.SetUserIDCookie(w, userID)
+	}
+
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "" && !strings.Contains(contentType, "text/plain") {
+		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	originalURL := strings.TrimSpace(string(body))
+	if originalURL == "" {
+		http.Error(w, "Empty URL", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := url.ParseRequestURI(originalURL); err != nil {
+		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.shortener.ShortenURL(ctx, originalURL, userID)
+	if err != nil {
+		cleanErr := strings.TrimSpace(err.Error())
+		http.Error(w, cleanErr, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	if result.IsNew {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusConflict)
+	}
+	io.WriteString(w, result.ShortURL)
+}
+
+// HandleShortenURLJSON обрабатывает запросы на сокращение URL в формате JSON.
+// Поддерживает HTTP методы POST.
+// Принимает JSON-объект с полем "url" в теле запроса.
+// Возвращает JSON-объект с полем "result", содержащим сокращенный URL.
+//
+// Коды ответа:
+//   - 201 Created: URL успешно сокращен (новый URL)
+//   - 409 Conflict: URL уже был сокращен ранее
+//   - 400 Bad Request: неверный формат запроса
+//   - 500 Internal Server Error: внутренняя ошибка сервера
+func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
 		userID = auth.GenerateUserID()
 		auth.SetUserIDCookie(w, userID)
 	}
@@ -151,39 +219,29 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 
 	var req models.ShortenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logrus.WithError(err).Error("Invalid JSON format")
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
 		return
 	}
 
 	if req.URL == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
 		return
 	}
 
 	if _, err := url.Parse(req.URL); err != nil {
-		logrus.WithError(err).Error("Invalid URL format")
 		w.WriteHeader(http.StatusBadRequest)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
 		return
 	}
 
 	result, err := h.shortener.ShortenURL(ctx, req.URL, userID)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to shorten URL")
 		w.WriteHeader(http.StatusInternalServerError)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"})
 		return
 	}
 
@@ -193,18 +251,23 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 	} else {
 		w.WriteHeader(http.StatusConflict)
 	}
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logrus.WithError(err).Error("Failed to encode response")
-	}
+	json.NewEncoder(w).Encode(resp)
 }
 
+// HandleBatchShortenURL обрабатывает запросы на пакетное сокращение URL.
+// Поддерживает HTTP методы POST.
+// Принимает массив JSON-объектов с полями "correlation_id" и "original_url" в теле запроса.
+// Возвращает массив JSON-объектов с полями "correlation_id" и "short_url".
+//
+// Коды ответа:
+//   - 201 Created: URLs успешно сокращены
+//   - 400 Bad Request: неверный формат запроса
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling batch shorten request")
 	ctx := r.Context()
 
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
-		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
 		userID = auth.GenerateUserID()
 		auth.SetUserIDCookie(w, userID)
 	}
@@ -219,58 +282,49 @@ func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Re
 
 	var req []models.BatchShortenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logrus.WithError(err).Error("Invalid JSON format")
 		w.WriteHeader(http.StatusBadRequest)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
 		return
 	}
 
 	if len(req) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"})
 		return
 	}
 
 	for _, item := range req {
 		if item.OriginalURL == "" {
 			w.WriteHeader(http.StatusBadRequest)
-			if err := json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"}); err != nil {
-				logrus.WithError(err).Error("Failed to encode error response")
-			}
+			json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
 			return
 		}
 		if _, err := url.Parse(item.OriginalURL); err != nil {
-			logrus.WithError(err).Error("Invalid URL format")
 			w.WriteHeader(http.StatusBadRequest)
-			if err := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"}); err != nil {
-				logrus.WithError(err).Error("Failed to encode error response")
-			}
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
 			return
 		}
 	}
 
 	resp, err := h.batch.ShortenBatch(ctx, req, userID)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to shorten batch")
 		w.WriteHeader(http.StatusInternalServerError)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"}); err != nil {
-			logrus.WithError(err).Error("Failed to encode error response")
-		}
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"})
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		logrus.WithError(err).Error("Failed to encode response")
-	}
+	json.NewEncoder(w).Encode(resp)
 }
 
+// HandleRedirect обрабатывает запросы на перенаправление по короткому URL.
+// Поддерживает HTTP методы GET.
+// Извлекает идентификатор из URL-пути и перенаправляет на оригинальный URL.
+//
+// Коды ответа:
+//   - 307 Temporary Redirect: успешное перенаправление
+//   - 410 Gone: URL был удален или не существует
 func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling redirect request")
 	ctx := r.Context()
 
 	vars := mux.Vars(r)
@@ -278,7 +332,6 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 
 	originalURL, found := h.redirector.Get(ctx, id)
 	if !found {
-		logrus.WithField("id", id).Warn("URL not found or deleted")
 		http.Error(w, "Gone", http.StatusGone)
 		return
 	}
@@ -287,72 +340,86 @@ func (h *RedirectHandler) HandleRedirect(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
+// HandleGetUserURLs обрабатывает запросы на получение всех URL, принадлежащих пользователю.
+// Поддерживает HTTP методы GET.
+// Извлекает идентификатор пользователя из cookie и возвращает список его URL.
+//
+// Коды ответа:
+//   - 200 OK: список URL успешно получен
+//   - 204 No Content: у пользователя нет сохраненных URL
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling get user URLs request")
 	ctx := r.Context()
 
 	userID, err := auth.GetUserIDFromCookie(r)
 	if err != nil {
-		logrus.WithError(err).Warn("No valid cookie found, generating new user ID")
 		userID = auth.GenerateUserID()
 		auth.SetUserIDCookie(w, userID)
 	}
 
 	urls, err := h.fetcher.GetURLsByUserID(ctx, userID)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get user URLs")
 		http.Error(w, "Failed to get user URLs", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if len(urls) == 0 {
-		logrus.WithField("user_id", userID).Info("No URLs found for user")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(urls); err != nil {
-		logrus.WithError(err).Error("Failed to encode user URLs")
-		http.Error(w, "Failed to encode user URLs", http.StatusInternalServerError)
-	}
+	encoder := json.NewEncoder(w)
+	encoder.Encode(urls)
 }
 
+// HandleDeleteURLs обрабатывает запросы на удаление URL.
+// Поддерживает HTTP методы DELETE.
+// Принимает массив идентификаторов URL для удаления в теле запроса.
+// Удаление выполняется асинхронно.
+//
+// Коды ответа:
+//   - 202 Accepted: запрос на удаление принят
+//   - 400 Bad Request: неверный формат запроса
+//   - 401 Unauthorized: пользователь не авторизован
+//   - 500 Internal Server Error: внутренняя ошибка сервера
 func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling delete URLs request")
-    ctx := r.Context()
+	ctx := r.Context()
 
-    userID, err := auth.GetUserIDFromCookie(r)
-    if err != nil {
-        logrus.WithError(err).Warn("No valid cookie found, unauthorized")
-        http.Error(w, "Unauthorized", http.StatusUnauthorized)
-        return
-    }
+	userID, err := auth.GetUserIDFromCookie(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-    var shortIDs []string
-    if err := json.NewDecoder(r.Body).Decode(&shortIDs); err != nil {
-        logrus.WithError(err).Error("Invalid JSON format")
-        http.Error(w, "Invalid JSON format", http.StatusBadRequest)
-        return
-    }
-    defer r.Body.Close()
+	var shortIDs []string
+	if err := json.NewDecoder(r.Body).Decode(&shortIDs); err != nil {
+		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
 
-    if len(shortIDs) == 0 {
-        http.Error(w, "Empty list of URLs", http.StatusBadRequest)
-        return
-    }
+	if len(shortIDs) == 0 {
+		http.Error(w, "Empty list of URLs", http.StatusBadRequest)
+		return
+	}
 
-    if err := h.deleter.DeleteURLs(ctx, shortIDs, userID); err != nil {
-        logrus.WithError(err).Error("Failed to delete URLs")
-        http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
-        return
-    }
+	if err := h.deleter.DeleteURLs(ctx, shortIDs, userID); err != nil {
+		http.Error(w, "Failed to delete URLs", http.StatusInternalServerError)
+		return
+	}
 
-    w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusAccepted)
 }
 
+// HandlePing обрабатывает запросы на проверку соединения с хранилищем данных.
+// Поддерживает HTTP методы GET.
+// Проверяет доступность базы данных.
+//
+// Коды ответа:
+//   - 200 OK: соединение с базой данных установлено или хранилище не требует проверки соединения
+//   - 500 Internal Server Error: ошибка соединения с базой данных
 func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Handling ping request")
 	ctx := r.Context()
 
 	err := h.pinger.Ping(ctx)
@@ -360,45 +427,47 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		if err.Error() == "file storage does not support database connection check" ||
 			err.Error() == "memory storage does not support database connection check" {
 			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write([]byte("Storage does not require database connection")); err != nil {
-				logrus.WithError(err).Error("Failed to write response")
-			}
+			w.Write([]byte("Storage does not require database connection"))
 			return
 		}
-		logrus.WithError(err).Error("Database ping failed")
 		http.Error(w, "Database connection error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte("Database connection is OK")); err != nil {
-		logrus.WithError(err).Error("Failed to write response")
-	}
+	w.Write([]byte("Database connection is OK"))
 }
 
+// HandleShortenURL делегирует обработку запроса на сокращение URL в текстовом формате соответствующему обработчику.
 func (h *URLHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request) {
 	h.shorten.HandleShortenURL(w, r)
 }
 
+// HandleShortenURLJSON делегирует обработку запроса на сокращение URL в формате JSON соответствующему обработчику.
 func (h *URLHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Request) {
 	h.shorten.HandleShortenURLJSON(w, r)
 }
 
+// HandleBatchShortenURL делегирует обработку запроса на пакетное сокращение URL соответствующему обработчику.
 func (h *URLHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Request) {
 	h.shorten.HandleBatchShortenURL(w, r)
 }
 
+// HandleRedirect делегирует обработку запроса на перенаправление по короткому URL соответствующему обработчику.
 func (h *URLHandler) HandleRedirect(w http.ResponseWriter, r *http.Request) {
 	h.redirect.HandleRedirect(w, r)
 }
 
+// HandleGetUserURLs делегирует обработку запроса на получение URL пользователя соответствующему обработчику.
 func (h *URLHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Request) {
 	h.userURLs.HandleGetUserURLs(w, r)
 }
 
+// HandleDeleteURLs делегирует обработку запроса на удаление URL соответствующему обработчику.
 func (h *URLHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request) {
 	h.delete.HandleDeleteURLs(w, r)
 }
 
+// HandlePing делегирует обработку запроса на проверку соединения с хранилищем данных соответствующему обработчику.
 func (h *URLHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 	h.ping.HandlePing(w, r)
 }
