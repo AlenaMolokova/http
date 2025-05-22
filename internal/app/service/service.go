@@ -108,9 +108,13 @@ func (s *Service) ShortenURL(ctx context.Context, originalURL, userID string) (m
 //   - error: ошибка, если операция не удалась
 func (s *Service) ShortenBatch(ctx context.Context, items []models.BatchShortenRequest, userID string) ([]models.BatchShortenResponse, error) {
 	batch := make(map[string]string, len(items))
+
+	correlationMap := make(map[string]string, len(items)) // correlationID -> shortID
+
 	for _, item := range items {
 		shortID := s.generator.Generate()
 		batch[shortID] = item.OriginalURL
+		correlationMap[item.CorrelationID] = shortID
 	}
 
 	s.cacheMu.Lock()
@@ -122,17 +126,14 @@ func (s *Service) ShortenBatch(ctx context.Context, items []models.BatchShortenR
 	}
 
 	resp := make([]models.BatchShortenResponse, 0, len(items))
-	for shortID, originalURL := range batch {
-		for _, item := range items {
-			if item.OriginalURL == originalURL {
-				resp = append(resp, models.BatchShortenResponse{
-					CorrelationID: item.CorrelationID,
-					ShortURL:      fmt.Sprintf("%s/%s", s.BaseURL, shortID),
-				})
-				break
-			}
-		}
+	for _, item := range items {
+		shortID := correlationMap[item.CorrelationID]
+		resp = append(resp, models.BatchShortenResponse{
+			CorrelationID: item.CorrelationID,
+			ShortURL:      fmt.Sprintf("%s/%s", s.BaseURL, shortID),
+		})
 	}
+
 	return resp, nil
 }
 
