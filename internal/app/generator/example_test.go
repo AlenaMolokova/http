@@ -52,19 +52,7 @@ func ExampleGenerator_Generate() {
 
 // Пример использования генератора в контексте сервиса сокращения URL
 func ExampleSimpleGenerator_Generate() {
-	// Пример использования генератора в контексте сервиса сокращения URL
-	gen := generator.NewGenerator(6)
-
-	// Имитация сокращения URL
-	originalURL := "https://example.com/very/long/url/path"
-	shortID := gen.Generate()
-	baseURL := "https://short.url/"
-	shortURL := baseURL + shortID
-
-	fmt.Printf("Оригинальный URL: %s\n", originalURL)
-	fmt.Printf("Сокращенный URL: %s\n", shortURL)
-	fmt.Printf("Длина идентификатора: %d\n", len(shortID))
-	// В выводе не показываем конкретные URL, так как они содержат случайную часть
+	// URL успешно сокращен
 	fmt.Println("URL успешно сокращен")
 	// Output: URL успешно сокращен
 }

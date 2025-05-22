@@ -3,6 +3,9 @@ package handler_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -74,7 +77,24 @@ func (m *MockPinger) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Пример использования обработчика для сокращения URL в текстовом формате
+// addAuthCookies добавляет корректные аутентификационные cookies к запросу
+// используя ту же логику, что и в auth пакете
+func addAuthCookies(req *http.Request, userID string) {
+	// Секретный ключ для подписи (тот же, что в auth пакете)
+	secretKey := []byte("your-secret-key-change-this-in-production")
+
+	// Создаем HMAC подпись
+	h := hmac.New(sha256.New, secretKey)
+	h.Write([]byte(userID))
+	signature := hex.EncodeToString(h.Sum(nil))
+
+	// Добавляем все необходимые cookies
+	req.AddCookie(&http.Cookie{Name: "user_id_id", Value: userID})
+	req.AddCookie(&http.Cookie{Name: "user_id_sign", Value: signature})
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: "1"})
+}
+
+// ExampleShortenHandler_HandleShortenURL демонстрирует использование обработчика для сокращения URL в текстовом формате.
 func ExampleShortenHandler_HandleShortenURL() {
 	// Создаем моки сервисов
 	shortener := &MockURLShortener{}
@@ -98,12 +118,16 @@ func ExampleShortenHandler_HandleShortenURL() {
 	// Проверяем код ответа
 	fmt.Printf("Код ответа: %d\n", rr.Code)
 	fmt.Printf("Сокращенный URL получен: %t\n", len(rr.Body.String()) > 0)
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 201
 	// Сокращенный URL получен: true
 }
 
-// Пример использования обработчика для сокращения URL в формате JSON
+// ExampleShortenHandler_HandleShortenURLJSON демонстрирует использование обработчика для сокращения URL в формате JSON.
 func ExampleShortenHandler_HandleShortenURLJSON() {
 	// Создаем моки сервисов
 	shortener := &MockURLShortener{}
@@ -130,12 +154,16 @@ func ExampleShortenHandler_HandleShortenURLJSON() {
 	var response map[string]string
 	json.Unmarshal(rr.Body.Bytes(), &response)
 	fmt.Printf("Результат содержит сокращенный URL: %t\n", response["result"] != "")
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 201
 	// Результат содержит сокращенный URL: true
 }
 
-// Пример использования обработчика для пакетного сокращения URL
+// ExampleShortenHandler_HandleBatchShortenURL демонстрирует использование обработчика для пакетного сокращения URL.
 func ExampleShortenHandler_HandleBatchShortenURL() {
 	// Создаем моки сервисов
 	shortener := &MockURLShortener{}
@@ -159,12 +187,16 @@ func ExampleShortenHandler_HandleBatchShortenURL() {
 	// Проверяем код ответа
 	fmt.Printf("Код ответа: %d\n", rr.Code)
 	fmt.Printf("Тип содержимого: %s\n", rr.Header().Get("Content-Type"))
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 201
 	// Тип содержимого: application/json
 }
 
-// Пример использования обработчика для перенаправления по короткому URL
+// ExampleRedirectHandler_HandleRedirect демонстрирует использование обработчика для перенаправления по короткому URL.
 func ExampleRedirectHandler_HandleRedirect() {
 	// Создаем моки сервисов
 	getter := &MockURLGetter{}
@@ -190,12 +222,16 @@ func ExampleRedirectHandler_HandleRedirect() {
 	// Проверяем код ответа и заголовок Location
 	fmt.Printf("Код ответа: %d\n", rr.Code)
 	fmt.Printf("Location заголовок: %s\n", rr.Header().Get("Location"))
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 307
 	// Location заголовок: https://example.com/original/url
 }
 
-// Пример использования обработчика для получения URL пользователя
+// ExampleUserURLsHandler_HandleGetUserURLs демонстрирует использование обработчика для получения URL пользователя.
 func ExampleUserURLsHandler_HandleGetUserURLs() {
 	// Создаем мок сервиса
 	fetcher := &MockURLFetcher{}
@@ -205,6 +241,9 @@ func ExampleUserURLsHandler_HandleGetUserURLs() {
 
 	// Создаем тестовый запрос
 	req := httptest.NewRequest(http.MethodGet, "/api/user/urls", nil)
+
+	// Добавляем корректные аутентификационные cookies
+	addAuthCookies(req, "test-user")
 
 	// Создаем ResponseRecorder для записи ответа
 	rr := httptest.NewRecorder()
@@ -219,13 +258,17 @@ func ExampleUserURLsHandler_HandleGetUserURLs() {
 	var urls []models.UserURL
 	json.Unmarshal(rr.Body.Bytes(), &urls)
 	fmt.Printf("Количество URL пользователя: %d\n", len(urls))
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 200
 	// Тип содержимого: application/json
 	// Количество URL пользователя: 1
 }
 
-// Пример использования обработчика для удаления URL
+// ExampleDeleteHandler_HandleDeleteURLs демонстрирует использование обработчика для удаления URL.
 func ExampleDeleteHandler_HandleDeleteURLs() {
 	// Создаем мок сервиса
 	deleter := &MockURLDeleter{}
@@ -238,8 +281,8 @@ func ExampleDeleteHandler_HandleDeleteURLs() {
 	req := httptest.NewRequest(http.MethodDelete, "/api/user/urls", strings.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 
-	// Добавляем тестовый cookie для идентификации пользователя
-	req.AddCookie(&http.Cookie{Name: "user_id", Value: "test-user"})
+	// Добавляем корректные аутентификационные cookies
+	addAuthCookies(req, "test-user")
 
 	// Создаем ResponseRecorder для записи ответа
 	rr := httptest.NewRecorder()
@@ -249,11 +292,15 @@ func ExampleDeleteHandler_HandleDeleteURLs() {
 
 	// Проверяем код ответа
 	fmt.Printf("Код ответа: %d\n", rr.Code)
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 202
 }
 
-// Пример использования обработчика для проверки соединения с хранилищем
+// ExamplePingHandler_HandlePing демонстрирует использование обработчика для проверки соединения с хранилищем.
 func ExamplePingHandler_HandlePing() {
 	// Создаем мок сервиса
 	pinger := &MockPinger{}
@@ -272,11 +319,15 @@ func ExamplePingHandler_HandlePing() {
 
 	// Проверяем код ответа
 	fmt.Printf("Код ответа: %d\n", rr.Code)
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа: 200
 }
 
-// Пример создания и использования комбинированного обработчика URL
+// ExampleURLHandler демонстрирует создание и использование комбинированного обработчика URL.
 func ExampleURLHandler() {
 	// Создаем моки всех сервисов
 	shortener := &MockURLShortener{}
@@ -300,6 +351,10 @@ func ExampleURLHandler() {
 	handler.HandleShortenURLJSON(rr, req)
 
 	fmt.Printf("Код ответа при сокращении URL: %d\n", rr.Code)
+
+	// Не забываем закрыть тело ответа
+	_ = rr.Result().Body.Close()
+
 	// Output:
 	// Код ответа при сокращении URL: 201
 }

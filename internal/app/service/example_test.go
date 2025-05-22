@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -87,6 +88,12 @@ func (m *mockStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mod
 			})
 		}
 	}
+
+	// Сортируем результат для предсказуемого порядка вывода
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].ShortURL < result[j].ShortURL
+	})
+
 	return result, nil
 }
 
@@ -592,6 +599,7 @@ func Example_httpHandlers() {
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Printf("Статус код: %d\n", resp.StatusCode)
 	fmt.Printf("Короткий URL: %s\n", body)
+	resp.Body.Close() // закрываем тело ответа
 
 	// 2. Получение оригинального URL
 	shortID := "short1" // Предполагается, что этот ID был создан в предыдущем запросе
@@ -603,6 +611,7 @@ func Example_httpHandlers() {
 	resp = w.Result()
 	fmt.Printf("Статус код: %d\n", resp.StatusCode)
 	fmt.Printf("Location: %s\n", resp.Header.Get("Location"))
+	resp.Body.Close() // закрываем тело ответа
 
 	// 3. Сокращение URL через JSON API
 	reqJSON := `{"url": "https://another-example.com"}`
@@ -616,6 +625,7 @@ func Example_httpHandlers() {
 	body, _ = io.ReadAll(resp.Body)
 	fmt.Printf("Статус код API: %d\n", resp.StatusCode)
 	fmt.Printf("Ответ API: %s\n", body)
+	resp.Body.Close() // закрываем тело ответа
 
 	// Output:
 	// Статус код: 201
