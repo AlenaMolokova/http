@@ -44,8 +44,8 @@ func (g *gzipReader) Close() error {
 
 // gzipWriter оборачивает http.ResponseWriter для автоматического сжатия ответов.
 type gzipWriter struct {
-	http.ResponseWriter         // Встроенный ResponseWriter
-	w              *gzip.Writer // Gzip-компрессор
+	http.ResponseWriter              // Встроенный ResponseWriter
+	w                   *gzip.Writer // Gzip-компрессор
 }
 
 // Write сжимает данные с помощью gzip и записывает их в ответ.
@@ -62,7 +62,7 @@ func (g *gzipWriter) Write(p []byte) (int, error) {
 }
 
 // GzipMiddleware создает middleware для автоматической обработки gzip-сжатия в HTTP-запросах и ответах.
-// Обрабатывает запросы со сжатыми данными (Content-Encoding: gzip) и 
+// Обрабатывает запросы со сжатыми данными (Content-Encoding: gzip) и
 // сжимает ответы для клиентов, поддерживающих gzip (Accept-Encoding: gzip).
 //
 // Параметры:

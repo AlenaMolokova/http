@@ -85,6 +85,8 @@ func TestSetUserIDCookie(t *testing.T) {
 
 	SetUserIDCookie(w, userID)
 
+	resp := w.Result()
+	defer resp.Body.Close()
 	cookies := w.Result().Cookies()
 	assert.Len(t, cookies, 3) // user_id_id, user_id_sign, user_id
 
