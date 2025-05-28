@@ -13,14 +13,46 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// Глобальные переменные для информации о сборке.
+// Значения устанавливаются на этапе сборки через флаги -ldflags.
+var (
+	buildVersion string
+	buildDate    string
+	buildCommit  string
+)
+
 // main запускает HTTP-сервер.
 // Выполняет функцию run и обрабатывает ошибки, выводя их в stderr.
 // Не использует os.Exit напрямую, полагаясь на естественное завершение программы.
 func main() {
+	printBuildInfo()
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Ошибка запуска сервера: %v\n", err)
 		return // Используем return вместо os.Exit
 	}
+}
+
+// printBuildInfo выводит информацию о сборке в stdout.
+func printBuildInfo() {
+	version := buildVersion
+	if version == "" {
+		version = "N/A"
+	}
+
+	date := buildDate
+	if date == "" {
+		date = "N/A"
+	}
+
+	commit := buildCommit
+	if commit == "" {
+		commit = "N/A"
+	}
+
+	fmt.Printf("Build version: %s\n", version)
+	fmt.Printf("Build date: %s\n", date)
+	fmt.Printf("Build commit: %s\n", commit)
 }
 
 // run выполняет основную логику HTTP-сервера.
