@@ -43,7 +43,6 @@ package noosexit
 import (
 	"go/ast"
 	"go/types"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -61,11 +60,6 @@ var Analyzer = &analysis.Analyzer{
 
 // run выполняет анализ кода и ищет запрещенные вызовы os.Exit.
 func run(pass *analysis.Pass) (interface{}, error) {
-	// Проверяем только свои исходные пакеты, игнорируя временные от компилятора
-	if !strings.HasPrefix(pass.Pkg.Path(), "github.com/AlenaMolokova/http") {
-		return nil, nil
-	}
-
 	// Проверяем только пакеты main
 	if pass.Pkg.Name() != "main" {
 		return nil, nil
