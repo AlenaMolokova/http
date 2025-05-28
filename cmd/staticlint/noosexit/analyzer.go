@@ -117,8 +117,3 @@ func isOsExitCall(call *ast.CallExpr, info *types.Info) bool {
 	}
 	return false
 }
-
-// isGoBuildCachePackage проверяет, относится ли путь пакета к кэшу go build.
-func isGoBuildCachePackage(pkgPath string) bool {
-	return strings.Contains(pkgPath, "go-build")
-}
