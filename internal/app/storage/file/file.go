@@ -1,3 +1,4 @@
+// Package file реализует файловое хранилище для сокращённых URL.
 package file
 
 import (
@@ -9,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
+	"github.com/sirupsen/logrus"
 )
 
 // FileStorage представляет хранилище URL-адресов в файловой системе.
@@ -47,7 +49,11 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("Failed to close file")
+		}
+	}()
 
 	decoder := json.NewDecoder(file)
 	var entries []models.UserURL
@@ -229,7 +235,9 @@ func (fs *FileStorage) scheduleSave() {
 		return
 	}
 
-	fs.saveToFile()
+	if err := fs.saveToFile(); err != nil {
+		logrus.WithError(err).Error("Failed to save file storage")
+	}
 }
 
 func (fs *FileStorage) saveToFile() error {
@@ -238,6 +246,13 @@ func (fs *FileStorage) saveToFile() error {
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("Failed to close temp file")
+		}
+	}()
+
 	writer := bufio.NewWriter(file)
 
 	fs.mu.RLock()
@@ -250,12 +265,10 @@ func (fs *FileStorage) saveToFile() error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(entries); err != nil {
-		file.Close()
 		return err
 	}
 
 	if err := writer.Flush(); err != nil {
-		file.Close()
 		return err
 	}
 
@@ -264,6 +277,10 @@ func (fs *FileStorage) saveToFile() error {
 	}
 
 	if err := os.Rename(tmpFile, fs.filePath); err != nil {
+		// Пытаемся удалить временный файл в случае ошибки переименования
+		if removeErr := os.Remove(tmpFile); removeErr != nil {
+			logrus.WithError(removeErr).Error("Failed to remove temp file after rename error")
+		}
 		return err
 	}
 

@@ -1,3 +1,4 @@
+// Package storage определяет интерфейсы для работы с различными типами хранилищ.
 package storage
 
 import (

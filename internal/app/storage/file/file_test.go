@@ -1,3 +1,4 @@
+// Package file содержит тесты для файлового хранилища URL.
 package file
 
 import (
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestNewFileStorage тестирует создание нового файлового хранилища.
+// Проверяет корректную инициализацию, загрузку данных из файла и обработку ошибок.
 func TestNewFileStorage(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -47,7 +50,7 @@ func TestNewFileStorage(t *testing.T) {
 	require.NoError(t, err)
 	_, err = NewFileStorage(inaccessiblePath)
 	assert.Error(t, err)
-	os.Chmod(inaccessiblePath, 0644)
+	require.NoError(t, os.Chmod(inaccessiblePath, 0644), "Ошибка восстановления прав файла")
 
 	invalidPath := filepath.Join(tmpDir, "invalid.json")
 	err = os.WriteFile(invalidPath, []byte("invalid json"), 0644)
@@ -56,6 +59,8 @@ func TestNewFileStorage(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestFileStorage_Save тестирует сохранение URL в файловое хранилище.
+// Проверяет, что данные корректно сохраняются в память и записываются в файл.
 func TestFileStorage_Save(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -89,6 +94,8 @@ func TestFileStorage_Save(t *testing.T) {
 	assert.Equal(t, "user1", urls[0].UserID)
 }
 
+// TestFileStorage_FindByOriginalURL тестирует поиск короткого URL по оригинальному URL.
+// Проверяет корректность поиска для существующих, несуществующих и удалённых URL.
 func TestFileStorage_FindByOriginalURL(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -120,6 +127,8 @@ func TestFileStorage_FindByOriginalURL(t *testing.T) {
 	assert.Empty(t, shortID)
 }
 
+// TestFileStorage_SaveBatch тестирует пакетное сохранение URL.
+// Проверяет, что несколько URL корректно сохраняются в память и записываются в файл.
 func TestFileStorage_SaveBatch(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -146,6 +155,8 @@ func TestFileStorage_SaveBatch(t *testing.T) {
 	assert.FileExists(t, filePath)
 }
 
+// TestFileStorage_Get тестирует получение оригинального URL по короткому идентификатору.
+// Проверяет случаи существующих, несуществующих и удалённых URL.
 func TestFileStorage_Get(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -179,6 +190,8 @@ func TestFileStorage_Get(t *testing.T) {
 	assert.Empty(t, originalURL)
 }
 
+// TestFileStorage_GetURLsByUserID тестирует получение всех URL пользователя.
+// Проверяет фильтрацию по пользователю и исключение удалённых URL.
 func TestFileStorage_GetURLsByUserID(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -212,6 +225,8 @@ func TestFileStorage_GetURLsByUserID(t *testing.T) {
 	assert.Empty(t, urls)
 }
 
+// TestFileStorage_DeleteURLs тестирует удаление URL по коротким идентификаторам.
+// Проверяет, что только URL указанного пользователя помечаются как удалённые.
 func TestFileStorage_DeleteURLs(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -240,6 +255,8 @@ func TestFileStorage_DeleteURLs(t *testing.T) {
 	assert.FileExists(t, filePath)
 }
 
+// TestFileStorage_Ping тестирует проверку соединения с хранилищем.
+// Проверяет, что файловая реализация возвращает ошибку, так как не поддерживает подключение к базе.
 func TestFileStorage_Ping(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -254,6 +271,8 @@ func TestFileStorage_Ping(t *testing.T) {
 	assert.Contains(t, err.Error(), "file storage does not support database connection check")
 }
 
+// TestFileStorage_saveToFile тестирует внутреннюю функцию сохранения данных в файл.
+// Проверяет корректность записи данных и обработку ошибок при недоступном пути.
 func TestFileStorage_saveToFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -295,6 +314,8 @@ func TestFileStorage_saveToFile(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestFileStorage_scheduleSave тестирует планирование сохранения данных в файл.
+// Проверяет, что сохранение происходит только при наличии изменений (isDirty).
 func TestFileStorage_scheduleSave(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")

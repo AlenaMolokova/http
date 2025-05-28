@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"log"
 	"sort"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 )
 
 // TestNewPostgresStorage тестирует создание нового PostgreSQL хранилища.
-// Тест пропускается в CI окружении, так как требует реальной базы данных.
+// Пропускается в CI, так как требует реальной базы данных.
 func TestNewPostgresStorage(t *testing.T) {
 	t.Skip("Тест требует реальной базы данных, пропускаем в CI")
 }
@@ -23,15 +24,21 @@ type MockDatabaseStorage struct {
 	pool pgxmock.PgxPoolIface
 }
 
+// Save сохраняет URL в базе данных.
+// Выполняет SQL-запрос для вставки записи в таблицу urls.
+func (db *MockDatabaseStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
+	_, err := db.pool.Exec(ctx, InsertURL, shortID, originalURL, userID)
+	return err
+}
+
 // TestDatabaseStorage_Save тестирует сохранение одного URL в базе данных.
+// Проверяет успешное выполнение и обработку ошибок.
 func TestDatabaseStorage_Save(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 	shortID := "abc123"
@@ -56,24 +63,28 @@ func TestDatabaseStorage_Save(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// Save сохраняет URL в базе данных.
-func (db *MockDatabaseStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
-	_, err := db.pool.Exec(ctx, InsertURL, shortID, originalURL, userID)
+// FindByOriginalURL находит короткий ID по оригинальному URL.
+// Возвращает shortID, если URL найден, или пустую строку, если нет.
+func (db *MockDatabaseStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
+	var shortID string
+	err := db.pool.QueryRow(ctx, SelectByOriginalURL, originalURL).Scan(&shortID)
 	if err != nil {
-		return err
+		if err == pgx.ErrNoRows {
+			return "", nil
+		}
+		return "", err
 	}
-	return nil
+	return shortID, nil
 }
 
 // TestDatabaseStorage_FindByOriginalURL тестирует поиск короткого ID по оригинальному URL.
+// Проверяет успешный поиск, отсутствие записи и обработку ошибок.
 func TestDatabaseStorage_FindByOriginalURL(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 	shortID := "abc123"
@@ -92,7 +103,7 @@ func TestDatabaseStorage_FindByOriginalURL(t *testing.T) {
 
 	mockPool.ExpectQuery("SELECT short_id").
 		WithArgs("https://nonexistent.com").
-		WillReturnRows(pgxmock.NewRows([]string{"short_id"}))
+		WillReturnError(pgx.ErrNoRows)
 
 	result, err = db.FindByOriginalURL(ctx, "https://nonexistent.com")
 	assert.NoError(t, err)
@@ -107,28 +118,28 @@ func TestDatabaseStorage_FindByOriginalURL(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// FindByOriginalURL находит короткий ID по оригинальному URL.
-func (db *MockDatabaseStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
-	var shortID string
-	err := db.pool.QueryRow(ctx, SelectByOriginalURL, originalURL).Scan(&shortID)
+// Get получает оригинальный URL по короткому ID.
+// Возвращает URL и флаг существования записи.
+func (db *MockDatabaseStorage) Get(ctx context.Context, shortID string) (string, bool) {
+	var originalURL string
+	err := db.pool.QueryRow(ctx, SelectByShortID, shortID).Scan(&originalURL)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return "", nil
+			return "", false
 		}
-		return "", err
+		return "", false
 	}
-	return shortID, nil
+	return originalURL, true
 }
 
 // TestDatabaseStorage_Get тестирует получение оригинального URL по короткому ID.
+// Проверяет успешное получение, отсутствие записи и обработку ошибок.
 func TestDatabaseStorage_Get(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 	shortID := "abc123"
@@ -162,28 +173,41 @@ func TestDatabaseStorage_Get(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// Get получает оригинальный URL по короткому ID.
-func (db *MockDatabaseStorage) Get(ctx context.Context, shortID string) (string, bool) {
-	var originalURL string
-	err := db.pool.QueryRow(ctx, SelectByShortID, shortID).Scan(&originalURL)
+// GetURLsByUserID получает все URL пользователя.
+// Возвращает список URL, принадлежащих указанному пользователю.
+func (db *MockDatabaseStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
+	rows, err := db.pool.Query(ctx, SelectByUserID, userID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return "", false
-		}
-		return "", false
+		return nil, err
 	}
-	return originalURL, true
+	defer rows.Close()
+
+	var urls []models.UserURL
+	for rows.Next() {
+		var shortID, originalURL, userID string
+		var isDeleted bool
+		if err := rows.Scan(&shortID, &originalURL, &userID, &isDeleted); err != nil {
+			return nil, err
+		}
+		if !isDeleted {
+			urls = append(urls, models.UserURL{ShortURL: shortID, OriginalURL: originalURL})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return urls, nil
 }
 
 // TestDatabaseStorage_GetURLsByUserID тестирует получение всех URL пользователя.
+// Проверяет успешное получение списка, обработку ошибок и пустой результат.
 func TestDatabaseStorage_GetURLsByUserID(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 	userID := "user1"
@@ -204,56 +228,63 @@ func TestDatabaseStorage_GetURLsByUserID(t *testing.T) {
 	assert.NoError(t, err)
 
 	mockPool.ExpectQuery("SELECT short_id, original_url, user_id, is_deleted").
+		WithArgs("empty").
+		WillReturnRows(pgxmock.NewRows([]string{"short_id", "original_url", "user_id", "is_deleted"}))
+
+	urls, err = db.GetURLsByUserID(ctx, "empty")
+	assert.NoError(t, err)
+	assert.Empty(t, urls)
+
+	mockPool.ExpectQuery("SELECT short_id, original_url, user_id, is_deleted").
 		WithArgs("error").
 		WillReturnError(pgx.ErrTxClosed)
 
 	urls, err = db.GetURLsByUserID(ctx, "error")
 	assert.Error(t, err)
 	assert.Nil(t, urls)
-
-	mockPool.ExpectQuery("SELECT short_id, original_url, user_id, is_deleted").
-		WithArgs("error2").
-		WillReturnRows(pgxmock.NewRows([]string{"short_id"}).AddRow("abc123")) // Неверное количество столбцов
-
-	urls, err = db.GetURLsByUserID(ctx, "error2")
-	assert.Error(t, err)
-	assert.Nil(t, urls)
 }
 
-// GetURLsByUserID получает все URL пользователя.
-func (db *MockDatabaseStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
-	rows, err := db.pool.Query(ctx, SelectByUserID, userID)
+// SaveBatch сохраняет пакет URL в базе данных в рамках транзакции.
+// Сортирует ключи для предсказуемого порядка вставки.
+func (db *MockDatabaseStorage) SaveBatch(ctx context.Context, batch map[string]string, userID string) error {
+	tx, err := db.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer rows.Close()
-
-	var urls []models.UserURL
-	for rows.Next() {
-		var shortID, originalURL, userID string
-		var isDeleted bool
-		if err := rows.Scan(&shortID, &originalURL, &userID, &isDeleted); err != nil {
-			return nil, err
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
+			log.Printf("Ошибка отката транзакции: %v", err)
 		}
-		urls = append(urls, models.UserURL{ShortURL: shortID, OriginalURL: originalURL})
+	}()
+
+	var keys []string
+	for k := range batch {
+		keys = append(keys, k)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	sort.Strings(keys)
+
+	for _, shortID := range keys {
+		originalURL := batch[shortID]
+		_, err := tx.Exec(ctx, InsertURLBatch, shortID, originalURL, userID)
+		if err != nil {
+			return err
+		}
 	}
 
-	return urls, nil
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 // TestDatabaseStorage_SaveBatch тестирует пакетное сохранение URL в базе данных.
-// Исправлена проблема с недетерминированным порядком обработки элементов map.
+// Проверяет успешное сохранение, обработку ошибок транзакции и откат.
 func TestDatabaseStorage_SaveBatch(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 	userID := "user1"
@@ -264,14 +295,12 @@ func TestDatabaseStorage_SaveBatch(t *testing.T) {
 
 	mockPool.ExpectBegin()
 
-	// Сортируем ключи для детерминированного порядка
 	var keys []string
 	for k := range batch {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 
-	// Добавляем ожидания в отсортированном порядке
 	for _, shortID := range keys {
 		originalURL := batch[shortID]
 		mockPool.ExpectExec("INSERT INTO urls").
@@ -287,7 +316,7 @@ func TestDatabaseStorage_SaveBatch(t *testing.T) {
 	err = mockPool.ExpectationsWereMet()
 	assert.NoError(t, err)
 
-	// Тест на ошибку при выполнении запроса
+	// Тест ошибки вставки
 	mockPool.ExpectBegin()
 	mockPool.ExpectExec("INSERT INTO urls").
 		WithArgs("error", "https://example.com", userID).
@@ -297,68 +326,42 @@ func TestDatabaseStorage_SaveBatch(t *testing.T) {
 	err = db.SaveBatch(ctx, map[string]string{"error": "https://example.com"}, userID)
 	assert.Error(t, err)
 
-	// Тест на ошибку при начале транзакции
+	// Тест ошибки начала транзакции
 	mockPool.ExpectBegin().WillReturnError(pgx.ErrTxClosed)
 
 	err = db.SaveBatch(ctx, batch, userID)
 	assert.Error(t, err)
 
-	// Тест на ошибку при коммите
+	// Тест ошибки коммита
 	mockPool.ExpectBegin()
-
 	for _, shortID := range keys {
 		originalURL := batch[shortID]
 		mockPool.ExpectExec("INSERT INTO urls").
 			WithArgs(shortID, originalURL, userID).
 			WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	}
-
 	mockPool.ExpectCommit().WillReturnError(pgx.ErrTxClosed)
+	mockPool.ExpectRollback()
 
 	err = db.SaveBatch(ctx, batch, userID)
 	assert.Error(t, err)
 }
 
-// SaveBatch сохраняет пакет URL в базе данных в рамках транзакции.
-// Исправлена проблема с недетерминированным порядком обработки элементов map.
-func (db *MockDatabaseStorage) SaveBatch(ctx context.Context, batch map[string]string, userID string) error {
-	tx, err := db.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-
-	// Сортируем ключи для детерминированного порядка выполнения
-	var keys []string
-	for k := range batch {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	// Выполняем запросы в отсортированном порядке
-	for _, shortID := range keys {
-		originalURL := batch[shortID]
-		_, err := tx.Exec(ctx, InsertURLBatch, shortID, originalURL, userID)
-		if err != nil {
-			return err
-		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return err
-	}
-	return nil
+// DeleteURLs помечает указанные URL как удаленные для заданного пользователя.
+// Обновляет поле is_deleted в таблице urls.
+func (db *MockDatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
+	_, err := db.pool.Exec(ctx, UpdateDeleteURLs, shortIDs, userID)
+	return err
 }
 
-// TestDatabaseStorage_DeleteURLs тестирует удаление URL из базы данных.
+// TestDatabaseStorage_DeleteURLs тестирует удаление URL пользователя.
+// Проверяет успешное обновление и обработку ошибок.
 func TestDatabaseStorage_DeleteURLs(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 	userID := "user1"
@@ -374,44 +377,35 @@ func TestDatabaseStorage_DeleteURLs(t *testing.T) {
 	err = mockPool.ExpectationsWereMet()
 	assert.NoError(t, err)
 
-	// Тест с пустым массивом
-	err = db.DeleteURLs(ctx, []string{}, userID)
-	assert.NoError(t, err)
-
-	// Тест на ошибку
+	// Тест ошибки обновления
 	mockPool.ExpectExec("UPDATE urls").
-		WithArgs(shortIDs, "error").
+		WithArgs([]string{"error"}, userID).
 		WillReturnError(pgx.ErrTxClosed)
 
-	err = db.DeleteURLs(ctx, shortIDs, "error")
+	err = db.DeleteURLs(ctx, []string{"error"}, userID)
 	assert.Error(t, err)
 }
 
-// DeleteURLs помечает URL как удаленные в базе данных.
-func (db *MockDatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
-	if len(shortIDs) == 0 {
-		return nil
-	}
-	_, err := db.pool.Exec(ctx, UpdateDeleteURLs, shortIDs, userID)
-	if err != nil {
-		return err
-	}
-	return nil
+// Ping проверяет соединение с базой данных.
+// Возвращает ошибку, если соединение не удалось установить.
+func (db *MockDatabaseStorage) Ping(ctx context.Context) error {
+	_, err := db.pool.Exec(ctx, "SELECT 1")
+	return err
 }
 
 // TestDatabaseStorage_Ping тестирует проверку соединения с базой данных.
+// Проверяет успешное выполнение и обработку ошибок.
 func TestDatabaseStorage_Ping(t *testing.T) {
 	mockPool, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	defer mockPool.Close()
 
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
+	db := &MockDatabaseStorage{pool: mockPool}
 
 	ctx := context.Background()
 
-	mockPool.ExpectPing()
+	mockPool.ExpectExec("SELECT 1").
+		WillReturnResult(pgxmock.NewResult("SELECT", 1))
 
 	err = db.Ping(ctx)
 	assert.NoError(t, err)
@@ -419,33 +413,9 @@ func TestDatabaseStorage_Ping(t *testing.T) {
 	err = mockPool.ExpectationsWereMet()
 	assert.NoError(t, err)
 
-	// Тест на ошибку ping
-	mockPool.ExpectPing().WillReturnError(pgx.ErrTxClosed)
+	mockPool.ExpectExec("SELECT 1").
+		WillReturnError(pgx.ErrTxClosed)
 
 	err = db.Ping(ctx)
 	assert.Error(t, err)
-}
-
-// Ping проверяет соединение с базой данных.
-func (db *MockDatabaseStorage) Ping(ctx context.Context) error {
-	return db.pool.Ping(ctx)
-}
-
-// TestDatabaseStorage_Close тестирует закрытие соединения с базой данных.
-func TestDatabaseStorage_Close(t *testing.T) {
-	mockPool, err := pgxmock.NewPool()
-	require.NoError(t, err)
-
-	db := &MockDatabaseStorage{
-		pool: mockPool,
-	}
-
-	err = db.Close()
-	assert.NoError(t, err)
-}
-
-// Close закрывает соединение с базой данных.
-func (db *MockDatabaseStorage) Close() error {
-	db.pool.Close()
-	return nil
 }

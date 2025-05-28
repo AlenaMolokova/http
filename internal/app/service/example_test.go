@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -18,13 +19,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Моки для тестирования
+// mockStorage имитирует хранилище для тестирования.
 type mockStorage struct {
 	urls     map[string]string            // shortID -> originalURL
 	userURLs map[string]map[string]string // userID -> shortID -> originalURL
 	deleted  map[string]bool              // shortID -> isDeleted
 }
 
+// newMockStorage создает новый экземпляр mockStorage.
 func newMockStorage() *mockStorage {
 	return &mockStorage{
 		urls:     make(map[string]string),
@@ -33,6 +35,7 @@ func newMockStorage() *mockStorage {
 	}
 }
 
+// Save сохраняет URL в хранилище.
 func (m *mockStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	m.urls[shortID] = originalURL
 	if _, ok := m.userURLs[userID]; !ok {
@@ -42,6 +45,7 @@ func (m *mockStorage) Save(ctx context.Context, shortID, originalURL, userID str
 	return nil
 }
 
+// SaveBatch сохраняет пакет URL в хранилище.
 func (m *mockStorage) SaveBatch(ctx context.Context, batch map[string]string, userID string) error {
 	for shortID, originalURL := range batch {
 		m.urls[shortID] = originalURL
@@ -53,6 +57,7 @@ func (m *mockStorage) SaveBatch(ctx context.Context, batch map[string]string, us
 	return nil
 }
 
+// Get получает оригинальный URL по короткому ID.
 func (m *mockStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	originalURL, ok := m.urls[shortID]
 	if !ok {
@@ -64,6 +69,7 @@ func (m *mockStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	return originalURL, true
 }
 
+// FindByOriginalURL находит короткий ID по оригинальному URL.
 func (m *mockStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	for shortID, url := range m.urls {
 		if url == originalURL && !m.deleted[shortID] {
@@ -73,6 +79,7 @@ func (m *mockStorage) FindByOriginalURL(ctx context.Context, originalURL string)
 	return "", nil
 }
 
+// GetURLsByUserID возвращает все URL пользователя.
 func (m *mockStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	userURLs, ok := m.userURLs[userID]
 	if !ok {
@@ -97,6 +104,7 @@ func (m *mockStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mod
 	return result, nil
 }
 
+// DeleteURLs помечает URL как удаленные.
 func (m *mockStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	for _, shortID := range shortIDs {
 		if userURLs, ok := m.userURLs[userID]; ok {
@@ -108,32 +116,31 @@ func (m *mockStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID 
 	return nil
 }
 
+// Ping имитирует проверку соединения с хранилищем.
 func (m *mockStorage) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Мок-генератор коротких идентификаторов
+// mockGenerator имитирует генератор коротких идентификаторов.
 type mockGenerator struct {
 	counter int
 }
 
+// Generate создает новый короткий идентификатор.
 func (g *mockGenerator) Generate() string {
 	g.counter++
 	return fmt.Sprintf("short%d", g.counter)
 }
 
-// Примеры использования сервиса сокращения URL
+// Example_shortenURL демонстрирует сокращение одного URL с использованием сервиса.
 func Example_shortenURL() {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Сокращаем URL
 	userID := "user123"
 	originalURL := "https://very-long-url.com/with/path/and?query=parameters"
 
@@ -146,7 +153,6 @@ func Example_shortenURL() {
 	fmt.Printf("Короткий URL: %s\n", result.ShortURL)
 	fmt.Printf("Это новый URL: %v\n", result.IsNew)
 
-	// Восстанавливаем оригинальный URL по короткому идентификатору
 	shortID := strings.TrimPrefix(result.ShortURL, baseURL+"/")
 	originalURL, found := svc.Get(ctx, shortID)
 
@@ -162,17 +168,15 @@ func Example_shortenURL() {
 	// Найден оригинальный URL: https://very-long-url.com/with/path/and?query=parameters
 }
 
+// Example_shortenBatch демонстрирует пакетное сокращение URL с использованием сервиса.
 func Example_shortenBatch() {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Подготавливаем пакет URL для сокращения
 	userID := "user123"
 	batch := []models.BatchShortenRequest{
 		{
@@ -200,17 +204,15 @@ func Example_shortenBatch() {
 	// Correlation ID: id2, Short URL: http://example.com/short2
 }
 
+// Example_getUserURLs демонстрирует получение всех URL пользователя.
 func Example_getUserURLs() {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Сокращаем несколько URL для пользователя
 	userID := "user123"
 	urls := []string{
 		"https://example1.com",
@@ -226,7 +228,6 @@ func Example_getUserURLs() {
 		}
 	}
 
-	// Получаем все URL пользователя
 	userURLs, err := svc.GetURLsByUserID(ctx, userID)
 	if err != nil {
 		fmt.Printf("Ошибка при получении URL пользователя: %v\n", err)
@@ -245,17 +246,15 @@ func Example_getUserURLs() {
 	// Короткий URL: http://example.com/short3, Оригинальный URL: https://example3.com
 }
 
+// Example_deleteURLs демонстрирует удаление URL пользователя.
 func Example_deleteURLs() {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Сокращаем несколько URL для пользователя
 	userID := "user123"
 	urls := []string{
 		"https://example1.com",
@@ -271,7 +270,6 @@ func Example_deleteURLs() {
 		}
 	}
 
-	// Удаляем один из URL
 	shortIDs := []string{"short2"}
 	err := svc.DeleteURLs(ctx, shortIDs, userID)
 	if err != nil {
@@ -279,11 +277,9 @@ func Example_deleteURLs() {
 		return
 	}
 
-	// Проверяем, что URL удален
 	_, found := svc.Get(ctx, "short2")
 	fmt.Printf("URL short2 доступен: %v\n", found)
 
-	// Получаем оставшиеся URL пользователя
 	userURLs, err := svc.GetURLsByUserID(ctx, userID)
 	if err != nil {
 		fmt.Printf("Ошибка при получении URL пользователя: %v\n", err)
@@ -297,18 +293,15 @@ func Example_deleteURLs() {
 	// Осталось 2 URL для пользователя user123
 }
 
-// Тестовые примеры со стандартными утверждениями Go
+// TestShortenURL тестирует сокращение одного URL.
 func TestShortenURL(t *testing.T) {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Тестируем сокращение URL
 	userID := "user123"
 	originalURL := "https://very-long-url.com/with/path"
 
@@ -318,7 +311,6 @@ func TestShortenURL(t *testing.T) {
 	assert.Equal(t, "http://example.com/short1", result.ShortURL)
 	assert.True(t, result.IsNew)
 
-	// Тестируем повторное сокращение того же URL
 	result, err = svc.ShortenURL(ctx, originalURL, userID)
 
 	assert.NoError(t, err)
@@ -326,17 +318,15 @@ func TestShortenURL(t *testing.T) {
 	assert.False(t, result.IsNew)
 }
 
+// TestShortenBatch тестирует пакетное сокращение URL.
 func TestShortenBatch(t *testing.T) {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Подготавливаем пакет URL для сокращения
 	userID := "user123"
 	batch := []models.BatchShortenRequest{
 		{
@@ -354,7 +344,6 @@ func TestShortenBatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 2)
 
-	// Проверяем корреляцию между запросами и ответами
 	correlationMap := make(map[string]string)
 	for _, result := range results {
 		correlationMap[result.CorrelationID] = result.ShortURL
@@ -365,17 +354,15 @@ func TestShortenBatch(t *testing.T) {
 	assert.NotEqual(t, correlationMap["id1"], correlationMap["id2"])
 }
 
+// TestGetURLsByUserID тестирует получение всех URL пользователя.
 func TestGetURLsByUserID(t *testing.T) {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Сокращаем несколько URL для пользователя
 	userID := "user123"
 	urls := []string{
 		"https://example1.com",
@@ -387,35 +374,29 @@ func TestGetURLsByUserID(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Получаем URL пользователя
 	userURLs, err := svc.GetURLsByUserID(ctx, userID)
 	require.NoError(t, err)
 	require.Len(t, userURLs, 2)
 
-	// Проверяем кэширование
-	// Вызываем второй раз - должно вернуться из кэша
 	cachedURLs, err := svc.GetURLsByUserID(ctx, userID)
 	require.NoError(t, err)
 	require.Len(t, cachedURLs, 2)
 	assert.Equal(t, userURLs, cachedURLs)
 
-	// Проверяем, что для несуществующего пользователя возвращается пустой список
 	emptyURLs, err := svc.GetURLsByUserID(ctx, "nonexistent")
 	require.NoError(t, err)
 	require.Empty(t, emptyURLs)
 }
 
+// TestDeleteURLs тестирует удаление URL пользователя.
 func TestDeleteURLs(t *testing.T) {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Сокращаем несколько URL для пользователя
 	userID := "user123"
 	urls := []string{
 		"https://example1.com",
@@ -428,42 +409,35 @@ func TestDeleteURLs(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Кэшируем URL пользователя
 	_, err := svc.GetURLsByUserID(ctx, userID)
 	require.NoError(t, err)
 
-	// Удаляем один из URL
 	shortIDs := []string{"short2"}
 	err = svc.DeleteURLs(ctx, shortIDs, userID)
 	require.NoError(t, err)
 
-	// Проверяем, что URL действительно удален
 	_, found := svc.Get(ctx, "short2")
 	assert.False(t, found)
 
-	// Проверяем, что кэш обновлен
 	userURLs, err := svc.GetURLsByUserID(ctx, userID)
 	require.NoError(t, err)
 	require.Len(t, userURLs, 2)
 
-	// Проверяем, что другие URL пользователя не затронуты
 	_, found = svc.Get(ctx, "short1")
 	assert.True(t, found)
 	_, found = svc.Get(ctx, "short3")
 	assert.True(t, found)
 }
 
+// TestPing тестирует проверку соединения с хранилищем.
 func TestPing(t *testing.T) {
-	// Создаем тестовый контекст и зависимости
 	ctx := context.Background()
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	// Инициализируем сервис
 	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
 
-	// Проверяем соединение с хранилищем
 	err := svc.Ping(ctx)
 	assert.NoError(t, err)
 }
@@ -472,7 +446,6 @@ func TestPing(t *testing.T) {
 // Пример показывает, как можно реализовать обработчики для сокращения URL через текстовый
 // и JSON интерфейсы, а также получения оригинального URL по короткому идентификатору.
 func Example_httpHandlers() {
-	// Создаем тестовый сервер и клиент
 	storage := newMockStorage()
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
@@ -489,9 +462,14 @@ func Example_httpHandlers() {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			log.Printf("Ошибка чтения тела запроса: %v", err)
 			return
 		}
-		defer r.Body.Close()
+		defer func() {
+			if closeErr := r.Body.Close(); closeErr != nil {
+				log.Printf("Ошибка закрытия тела запроса: %v", closeErr)
+			}
+		}()
 
 		url := string(body)
 		if url == "" {
@@ -499,12 +477,12 @@ func Example_httpHandlers() {
 			return
 		}
 
-		// Извлекаем user ID из cookie или создаем новый
 		userID := "user123" // В реальном приложении это может быть из cookie или JWT
 
 		result, err := svc.ShortenURL(r.Context(), url, userID)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			log.Printf("Ошибка при сокращении URL: %v", err)
 			return
 		}
 
@@ -515,7 +493,10 @@ func Example_httpHandlers() {
 
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(statusCode)
-		w.Write([]byte(result.ShortURL))
+		if _, err := w.Write([]byte(result.ShortURL)); err != nil {
+			log.Printf("Ошибка записи ответа: %v", err)
+			return
+		}
 	}
 
 	// Пример HTTP хендлера для получения оригинального URL
@@ -525,7 +506,6 @@ func Example_httpHandlers() {
 			return
 		}
 
-		// Извлекаем shortID из пути URL
 		path := r.URL.Path
 		shortID := strings.TrimPrefix(path, "/")
 
@@ -552,21 +532,26 @@ func Example_httpHandlers() {
 
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
+			log.Printf("Ошибка декодирования JSON: %v", err)
 			return
 		}
-		defer r.Body.Close()
+		defer func() {
+			if closeErr := r.Body.Close(); closeErr != nil {
+				log.Printf("Ошибка закрытия тела запроса: %v", closeErr)
+			}
+		}()
 
 		if request.URL == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		// Извлекаем user ID из cookie или создаем новый
 		userID := "user123" // В реальном приложении это может быть из cookie или JWT
 
 		result, err := svc.ShortenURL(r.Context(), request.URL, userID)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			log.Printf("Ошибка при сокращении URL: %v", err)
 			return
 		}
 
@@ -583,7 +568,10 @@ func Example_httpHandlers() {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Ошибка кодирования ответа: %v", err)
+			return
+		}
 	}
 
 	// Примеры использования HTTP хендлеров
@@ -596,22 +584,32 @@ func Example_httpHandlers() {
 	shortenHandler(w, req)
 
 	resp := w.Result()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Ошибка чтения ответа: %v", err)
+		return
+	}
+	if err := resp.Body.Close(); err != nil {
+		log.Printf("Ошибка закрытия тела ответа: %v", err)
+		return
+	}
 	fmt.Printf("Статус код: %d\n", resp.StatusCode)
 	fmt.Printf("Короткий URL: %s\n", body)
-	resp.Body.Close() // закрываем тело ответа
 
 	// 2. Получение оригинального URL
-	shortID := "short1" // Предполагается, что этот ID был создан в предыдущем запросе
+	shortID := "short1"
 	req = httptest.NewRequest(http.MethodGet, "/"+shortID, nil)
 	w = httptest.NewRecorder()
 
 	getHandler(w, req)
 
 	resp = w.Result()
+	if err := resp.Body.Close(); err != nil {
+		log.Printf("Ошибка закрытия тела ответа: %v", err)
+		return
+	}
 	fmt.Printf("Статус код: %d\n", resp.StatusCode)
 	fmt.Printf("Location: %s\n", resp.Header.Get("Location"))
-	resp.Body.Close() // закрываем тело ответа
 
 	// 3. Сокращение URL через JSON API
 	reqJSON := `{"url": "https://another-example.com"}`
@@ -622,10 +620,17 @@ func Example_httpHandlers() {
 	apiShortenHandler(w, req)
 
 	resp = w.Result()
-	body, _ = io.ReadAll(resp.Body)
+	body, err = io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Ошибка чтения ответа: %v", err)
+		return
+	}
+	if err := resp.Body.Close(); err != nil {
+		log.Printf("Ошибка закрытия тела ответа: %v", err)
+		return
+	}
 	fmt.Printf("Статус код API: %d\n", resp.StatusCode)
 	fmt.Printf("Ответ API: %s\n", body)
-	resp.Body.Close() // закрываем тело ответа
 
 	// Output:
 	// Статус код: 201

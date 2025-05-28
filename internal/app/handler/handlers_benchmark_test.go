@@ -30,6 +30,13 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
 		h.HandleShortenURL(rr, req)
+
+		// Очищаем ресурсы после каждой итерации
+		if result := rr.Result(); result != nil {
+			if closeErr := result.Body.Close(); closeErr != nil {
+				b.Logf("Failed to close response body: %v", closeErr)
+			}
+		}
 	}
 }
 
@@ -40,7 +47,9 @@ func BenchmarkHandleRedirect(b *testing.B) {
 	h := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
 
 	ctx := context.Background()
-	storage.Save(ctx, "shortID", "https://example.com", "user123")
+	if err := storage.Save(ctx, "shortID", "https://example.com", "user123"); err != nil {
+		b.Fatal(err)
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", "/shortID", nil)
 	if err != nil {
 		b.Fatal(err)
@@ -51,6 +60,13 @@ func BenchmarkHandleRedirect(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
 		h.HandleRedirect(rr, req)
+
+		// Очищаем ресурсы после каждой итерации
+		if result := rr.Result(); result != nil {
+			if closeErr := result.Body.Close(); closeErr != nil {
+				b.Logf("Failed to close response body: %v", closeErr)
+			}
+		}
 	}
 }
 
@@ -71,5 +87,12 @@ func BenchmarkHandleShortenURLJSON(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
 		h.HandleShortenURLJSON(rr, req)
+
+		// Очищаем ресурсы после каждой итерации
+		if result := rr.Result(); result != nil {
+			if closeErr := result.Body.Close(); closeErr != nil {
+				b.Logf("Failed to close response body: %v", closeErr)
+			}
+		}
 	}
 }

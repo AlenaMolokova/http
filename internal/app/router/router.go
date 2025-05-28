@@ -1,3 +1,4 @@
+// Package router настраивает маршруты HTTP-сервера приложения.
 package router
 
 import (

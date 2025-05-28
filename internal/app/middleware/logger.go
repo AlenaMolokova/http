@@ -1,3 +1,4 @@
+// Package middleware реализует middleware для логирования HTTP-запросов.
 package middleware
 
 import (

@@ -1,3 +1,4 @@
+// Package config предоставляет функции для конфигурации приложения.
 package config
 
 import (

@@ -1,8 +1,10 @@
+// Package handler реализует обработчики HTTP-запросов для приложения.
 package handler
 
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -162,7 +164,11 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if closeErr := r.Body.Close(); closeErr != nil {
+			log.Printf("Failed to close request body: %v", closeErr)
+		}
+	}()
 
 	originalURL := strings.TrimSpace(string(body))
 	if originalURL == "" {
@@ -188,7 +194,10 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 	} else {
 		w.WriteHeader(http.StatusConflict)
 	}
-	io.WriteString(w, result.ShortURL)
+	if _, err := io.WriteString(w, result.ShortURL); err != nil {
+		log.Printf("Failed to write response: %v", err)
+		return
+	}
 }
 
 // HandleShortenURLJSON обрабатывает запросы на сокращение URL в формате JSON.
@@ -214,7 +223,11 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if closeErr := r.Body.Close(); closeErr != nil {
+			log.Printf("Failed to close request body: %v", closeErr)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -222,26 +235,38 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
 	if req.URL == "" {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
 	if _, err := url.Parse(req.URL); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
 	result, err := h.shortener.ShortenURL(ctx, req.URL, userID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten URL"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
@@ -251,7 +276,10 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 	} else {
 		w.WriteHeader(http.StatusConflict)
 	}
-	json.NewEncoder(w).Encode(resp)
+	if encErr := json.NewEncoder(w).Encode(resp); encErr != nil {
+		log.Printf("Failed to encode response: %v", encErr)
+		return
+	}
 }
 
 // HandleBatchShortenURL обрабатывает запросы на пакетное сокращение URL.
@@ -276,32 +304,48 @@ func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if closeErr := r.Body.Close(); closeErr != nil {
+			log.Printf("Failed to close request body: %v", closeErr)
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 
 	var req []models.BatchShortenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
 	if len(req) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Empty batch"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
 	for _, item := range req {
 		if item.OriginalURL == "" {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"})
+			if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "URL cannot be empty"}); encErr != nil {
+				log.Printf("Failed to encode error response: %v", encErr)
+				return
+			}
 			return
 		}
 		if _, err := url.Parse(item.OriginalURL); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"})
+			if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid URL format"}); encErr != nil {
+				log.Printf("Failed to encode error response: %v", encErr)
+				return
+			}
 			return
 		}
 	}
@@ -309,12 +353,18 @@ func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Re
 	resp, err := h.batch.ShortenBatch(ctx, req, userID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"})
+		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Failed to shorten batch"}); encErr != nil {
+			log.Printf("Failed to encode error response: %v", encErr)
+			return
+		}
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	if encErr := json.NewEncoder(w).Encode(resp); encErr != nil {
+		log.Printf("Failed to encode response: %v", encErr)
+		return
+	}
 }
 
 // HandleRedirect обрабатывает запросы на перенаправление по короткому URL.
@@ -370,7 +420,10 @@ func (h *UserURLsHandler) HandleGetUserURLs(w http.ResponseWriter, r *http.Reque
 	}
 
 	encoder := json.NewEncoder(w)
-	encoder.Encode(urls)
+	if encErr := encoder.Encode(urls); encErr != nil {
+		log.Printf("Failed to encode response: %v", encErr)
+		return
+	}
 }
 
 // HandleDeleteURLs обрабатывает запросы на удаление URL.
@@ -397,7 +450,11 @@ func (h *DeleteHandler) HandleDeleteURLs(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if closeErr := r.Body.Close(); closeErr != nil {
+			log.Printf("Failed to close request body: %v", closeErr)
+		}
+	}()
 
 	if len(shortIDs) == 0 {
 		http.Error(w, "Empty list of URLs", http.StatusBadRequest)
@@ -427,14 +484,20 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		if err.Error() == "file storage does not support database connection check" ||
 			err.Error() == "memory storage does not support database connection check" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Storage does not require database connection"))
+			if _, writeErr := w.Write([]byte("Storage does not require database connection")); writeErr != nil {
+				log.Printf("Failed to write response: %v", writeErr)
+				return
+			}
 			return
 		}
 		http.Error(w, "Database connection error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Database connection is OK"))
+	if _, writeErr := w.Write([]byte("Database connection is OK")); writeErr != nil {
+		log.Printf("Failed to write response: %v", writeErr)
+		return
+	}
 }
 
 // HandleShortenURL делегирует обработку запроса на сокращение URL в текстовом формате соответствующему обработчику.

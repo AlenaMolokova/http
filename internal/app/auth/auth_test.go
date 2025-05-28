@@ -86,7 +86,11 @@ func TestSetUserIDCookie(t *testing.T) {
 	SetUserIDCookie(w, userID)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("Failed to close response body: %v", err)
+		}
+	}()
 
 	cookies := resp.Cookies()
 	assert.Len(t, cookies, 3) // user_id_id, user_id_sign, user_id
@@ -209,7 +213,9 @@ func TestRequireAuth(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
+		if _, err := w.Write([]byte("success")); err != nil {
+			t.Logf("Failed to write response: %v", err)
+		}
 	})
 
 	tests := []struct {

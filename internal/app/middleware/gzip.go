@@ -1,3 +1,4 @@
+// Package middleware содержит HTTP middleware, включая поддержку gzip-сжатия.
 package middleware
 
 import (
@@ -35,11 +36,14 @@ func (g *gzipReader) Read(p []byte) (n int, err error) {
 // Возвращает:
 //   - error: ошибка закрытия потоков данных
 func (g *gzipReader) Close() error {
-	if err := g.gz.Close(); err != nil {
-		g.r.Close()
-		return err
+	gzErr := g.gz.Close()
+	rErr := g.r.Close()
+
+	// Возвращаем первую ошибку, если она есть
+	if gzErr != nil {
+		return gzErr
 	}
-	return g.r.Close()
+	return rErr
 }
 
 // gzipWriter оборачивает http.ResponseWriter для автоматического сжатия ответов.
@@ -112,7 +116,11 @@ func GzipMiddleware(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			defer gz.Close()
+			defer func() {
+				if closeErr := gz.Close(); closeErr != nil {
+					logrus.WithError(closeErr).Error("Failed to close gzip writer")
+				}
+			}()
 
 			w.Header().Set("Content-Encoding", "gzip")
 			w.Header().Add("Vary", "Accept-Encoding")

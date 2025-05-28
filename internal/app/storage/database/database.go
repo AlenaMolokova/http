@@ -1,3 +1,4 @@
+// Package database предоставляет реализацию хранилища URL в базе данных.
 package database
 
 import (
@@ -150,7 +151,11 @@ func (db *DatabaseStorage) SaveBatch(ctx context.Context, batch map[string]strin
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && rollbackErr != pgx.ErrTxClosed {
+			logrus.WithError(rollbackErr).Error("Failed to rollback transaction")
+		}
+	}()
 
 	for shortID, originalURL := range batch {
 		_, err := tx.Exec(ctx, InsertURLBatch, shortID, originalURL, userID)

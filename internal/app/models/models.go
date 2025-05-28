@@ -1,3 +1,4 @@
+// Package models содержит структуры и типы, используемые в приложении.
 package models
 
 import (
