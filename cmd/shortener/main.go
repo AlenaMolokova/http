@@ -1,7 +1,11 @@
+// Package main реализует HTTP-сервер для сервиса сокращения URL.
+// Запускает сервер с маршрутами для обработки запросов сокращения и перенаправления URL.
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/AlenaMolokova/http/internal/app"
 	"github.com/AlenaMolokova/http/internal/app/config"
@@ -9,18 +13,31 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// main запускает HTTP-сервер.
+// Выполняет функцию run и обрабатывает ошибки, выводя их в stderr.
+// Не использует os.Exit напрямую, полагаясь на естественное завершение программы.
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Ошибка запуска сервера: %v\n", err)
+		return // Используем return вместо os.Exit
+	}
+}
+
+// run выполняет основную логику HTTP-сервера.
+// Инициализирует приложение, настраивает маршруты и запускает сервер.
+// Возвращает ошибку, если что-то пошло не так.
+func run() error {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetLevel(logrus.InfoLevel)
 
 	cfg := config.NewConfig()
-	logrus.WithField("config", cfg).Info("Configuration loaded")
+	logrus.WithField("config", cfg).Info("Конфигурация загружена")
 
 	appInstance, err := app.NewApp(cfg)
 	if err != nil {
-		logrus.WithError(err).Fatal("Не удалось инициализировать приложение")
+		return fmt.Errorf("не удалось инициализировать приложение: %w", err)
 	}
-	logrus.Info("Application initialized")
+	logrus.Info("Приложение инициализировано")
 
 	r := router.NewRouter(appInstance.Handler)
 
@@ -31,10 +48,11 @@ func main() {
 	logrus.WithFields(logrus.Fields{
 		"address":  cfg.ServerAddress,
 		"base_url": cfg.BaseURL,
-	}).Info("Starting server")
+	}).Info("Запуск сервера")
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logrus.WithError(err).Fatal("Failed to start server")
+		return fmt.Errorf("не удалось запустить сервер: %w", err)
 	}
-	logrus.Info("Server is running")
+	logrus.Info("Сервер работает")
+	return nil
 }
