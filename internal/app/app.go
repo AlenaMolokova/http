@@ -85,15 +85,18 @@ func min(a, b int) int {
 //
 // Функция настраивает все необходимые компоненты приложения,
 // включая хранилище URL, генератор коротких идентификаторов,
-// сервисный слой и обработчики запросов.
+// сервисный слой и обработчики запросов с роутером.
 func NewApp(cfg *config.Config) (*App, error) {
+	// Инициализируем хранилище
 	urlStorage, err := storage.NewStorage(cfg.DatabaseDSN, cfg.FileStoragePath)
 	if err != nil {
 		return nil, err
 	}
 
+	// Создаем генератор коротких идентификаторов
 	urlGenerator := generator.NewGenerator(8)
 
+	// Инициализируем сервисный слой
 	urlService := service.NewService(
 		urlStorage.AsURLSaver(),
 		urlStorage.AsURLBatchSaver(),
@@ -105,18 +108,19 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.BaseURL,
 	)
 
-	handler := handler.NewURLHandler(
-		urlService,
-		urlService,
-		urlService,
-		urlService,
-		urlService,
-		urlService,
+	// Создаем основной обработчик с роутером
+	urlHandler := handler.NewURLHandler(
+		urlService, // URLShortener
+		urlService, // BatchURLShortener
+		urlService, // URLGetter
+		urlService, // URLFetcher
+		urlService, // URLDeleter
+		urlService, // Pinger
 		cfg.BaseURL,
 	)
 
 	return &App{
-		Handler: handler,
+		Handler: urlHandler,
 		Service: urlService,
 	}, nil
 }

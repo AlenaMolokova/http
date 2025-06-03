@@ -29,7 +29,7 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		h.HandleShortenURL(rr, req)
+		h.ShortenHandler.HandleShortenURL(rr, req)
 
 		// Очищаем ресурсы после каждой итерации
 		if result := rr.Result(); result != nil {
@@ -59,7 +59,7 @@ func BenchmarkHandleRedirect(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		h.HandleRedirect(rr, req)
+		h.RedirectHandler.HandleRedirect(rr, req)
 
 		// Очищаем ресурсы после каждой итерации
 		if result := rr.Result(); result != nil {
@@ -86,9 +86,97 @@ func BenchmarkHandleShortenURLJSON(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rr := httptest.NewRecorder()
-		h.HandleShortenURLJSON(rr, req)
+		h.ShortenHandler.HandleShortenURLJSON(rr, req)
 
 		// Очищаем ресурсы после каждой итерации
+		if result := rr.Result(); result != nil {
+			if closeErr := result.Body.Close(); closeErr != nil {
+				b.Logf("Failed to close response body: %v", closeErr)
+			}
+		}
+	}
+}
+
+func BenchmarkHandleDeleteURLs(b *testing.B) {
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewDeleteHandler(s)
+
+	userID := "test-user"
+	shortID := generator.Generate()
+	if err := storage.Save(context.Background(), shortID, "https://example.com", userID); err != nil {
+		b.Fatal(err)
+	}
+
+	body := bytes.NewBufferString(`["` + shortID + `"]`)
+	req, err := http.NewRequestWithContext(context.Background(), "DELETE", "/api/user/urls", body)
+	if err != nil {
+		b.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		h.HandleDeleteURLs(rr, req)
+
+		if result := rr.Result(); result != nil {
+			if closeErr := result.Body.Close(); closeErr != nil {
+				b.Logf("Failed to close response body: %v", closeErr)
+			}
+		}
+	}
+}
+
+func BenchmarkHandleGetUserURLs(b *testing.B) {
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewUserURLsHandler(s)
+
+	userID := "test-user"
+	shortID := generator.Generate()
+	if err := storage.Save(context.Background(), shortID, "https://example.com", userID); err != nil {
+		b.Fatal(err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "/api/user/urls", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		h.HandleGetUserURLs(rr, req)
+
+		if result := rr.Result(); result != nil {
+			if closeErr := result.Body.Close(); closeErr != nil {
+				b.Logf("Failed to close response body: %v", closeErr)
+			}
+		}
+	}
+}
+
+func BenchmarkHandlePing(b *testing.B) {
+	storage := memory.NewMemoryStorage()
+	generator := generator.NewGenerator(8)
+	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewPingHandler(s)
+
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "/ping", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rr := httptest.NewRecorder()
+		h.HandlePing(rr, req)
+
 		if result := rr.Result(); result != nil {
 			if closeErr := result.Body.Close(); closeErr != nil {
 				b.Logf("Failed to close response body: %v", closeErr)

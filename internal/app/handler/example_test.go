@@ -80,6 +80,14 @@ func (m *MockPinger) Ping(ctx context.Context) error {
 	return nil
 }
 
+// MockPingerError - мок для сервиса проверки соединения с ошибкой.
+type MockPingerError struct{}
+
+// Ping имитирует ошибку соединения с хранилищем для тестов.
+func (m *MockPingerError) Ping(ctx context.Context) error {
+	return fmt.Errorf("database connection failed")
+}
+
 // addAuthCookies добавляет корректные аутентификационные cookies к запросу,
 // используя ту же логику, что и в auth пакете.
 func addAuthCookies(req *http.Request, userID string) {
@@ -126,6 +134,34 @@ func ExampleShortenHandler_HandleShortenURL() {
 	// Output:
 	// Код ответа: 201
 	// Сокращенный URL получен: true
+}
+
+// ExampleShortenHandler_HandleShortenURL_invalidInput демонстрирует обработку невалидного ввода.
+func ExampleShortenHandler_HandleShortenURL_invalidInput() {
+	shortener := &MockURLShortener{}
+	batchShortener := &MockBatchURLShortener{}
+	baseURL := "http://localhost:8080"
+
+	handler := handler.NewShortenHandler(shortener, batchShortener, baseURL)
+
+	body := "invalid-url"
+	req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader(body))
+	req.Header.Set("Content-Type", "text/plain")
+
+	rr := httptest.NewRecorder()
+
+	handler.HandleShortenURL(rr, req)
+
+	resp := rr.Result()
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("Ошибка закрытия тела ответа: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Код ответа: %d\n", resp.StatusCode)
+
+	// Output:
+	// Код ответа: 400
 }
 
 // ExampleShortenHandler_HandleShortenURLJSON демонстрирует использование обработчика для сокращения URL в формате JSON.
@@ -202,10 +238,8 @@ func ExampleShortenHandler_HandleBatchShortenURL() {
 // ExampleRedirectHandler_HandleRedirect демонстрирует использование обработчика для перенаправления по короткому URL.
 func ExampleRedirectHandler_HandleRedirect() {
 	getter := &MockURLGetter{}
-	fetcher := &MockURLFetcher{}
-	baseURL := "http://localhost:8080"
 
-	handler := handler.NewRedirectHandler(getter, fetcher, baseURL)
+	handler := handler.NewRedirectHandler(getter)
 
 	r := mux.NewRouter()
 	r.HandleFunc("/{id}", handler.HandleRedirect)
@@ -299,6 +333,33 @@ func ExampleDeleteHandler_HandleDeleteURLs() {
 	// Код ответа: 202
 }
 
+// ExampleDeleteHandler_HandleDeleteURLs_invalidJSON демонстрирует обработку невалидного JSON.
+func ExampleDeleteHandler_HandleDeleteURLs_invalidJSON() {
+	deleter := &MockURLDeleter{}
+
+	handler := handler.NewDeleteHandler(deleter)
+
+	reqBody := `invalid json`
+	req := httptest.NewRequest(http.MethodDelete, "/api/user/urls", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	addAuthCookies(req, "test-user")
+
+	rr := httptest.NewRecorder()
+
+	handler.HandleDeleteURLs(rr, req)
+
+	resp := rr.Result()
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("Ошибка закрытия тела ответа: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Код ответа: %d\n", resp.StatusCode)
+
+	// Output:
+	// Код ответа: 400
+}
+
 // ExamplePingHandler_HandlePing демонстрирует использование обработчика для проверки соединения с хранилищем.
 func ExamplePingHandler_HandlePing() {
 	pinger := &MockPinger{}
@@ -323,6 +384,30 @@ func ExamplePingHandler_HandlePing() {
 	// Код ответа: 200
 }
 
+// ExamplePingHandler_HandlePing_error демонстрирует обработку ошибки соединения.
+func ExamplePingHandler_HandlePing_error() {
+	pinger := &MockPingerError{}
+
+	handler := handler.NewPingHandler(pinger)
+
+	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+
+	rr := httptest.NewRecorder()
+
+	handler.HandlePing(rr, req)
+
+	resp := rr.Result()
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("Ошибка закрытия тела ответа: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Код ответа: %d\n", resp.StatusCode)
+
+	// Output:
+	// Код ответа: 500
+}
+
 // ExampleURLHandler демонстрирует создание и использование комбинированного обработчика URL.
 func ExampleURLHandler() {
 	shortener := &MockURLShortener{}
@@ -341,7 +426,7 @@ func ExampleURLHandler() {
 
 	rr := httptest.NewRecorder()
 
-	handler.HandleShortenURLJSON(rr, req)
+	handler.ShortenHandler.HandleShortenURLJSON(rr, req)
 
 	resp := rr.Result()
 	if err := resp.Body.Close(); err != nil {

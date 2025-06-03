@@ -1,60 +1,50 @@
-// Package router настраивает маршруты HTTP-сервера приложения.
 package router
 
 import (
-	"net/http"
-
 	"github.com/AlenaMolokova/http/internal/app/handler"
-	"github.com/AlenaMolokova/http/internal/app/middleware"
+	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/gorilla/mux"
-	"github.com/sirupsen/logrus"
 )
 
-// Router представляет маршрутизатор запросов для сервиса сокращения URL.
+// Router реализует главный роутер приложения с настроенными маршрутами.
+// Создается через конструктор NewRouter для обеспечения согласованности.
 type Router struct {
-	handler *handler.URLHandler
+	*mux.Router
 }
 
-// NewRouter создает новый экземпляр Router с указанным обработчиком.
-// Параметр handler - обработчик URL, который будет использоваться для обработки запросов.
-func NewRouter(handler *handler.URLHandler) *Router {
-	return &Router{
-		handler: handler,
-	}
-}
+// NewRouter создает новый экземпляр роутера с инициализированными обработчиками.
+// Параметры:
+// - shortener: сервис сокращения URL
+// - batch: сервис пакетной обработки
+// - getter: сервис получения URL
+// - fetcher: сервис получения пользовательских URL
+// - deleter: сервис удаления URL
+// - pinger: сервис проверки здоровья
+// - baseURL: базовый адрес сервиса
+func NewRouter(
+	shortener models.URLShortener,
+	batch models.BatchURLShortener,
+	getter models.URLGetter,
+	fetcher models.URLFetcher,
+	deleter models.URLDeleter,
+	pinger models.Pinger,
+	baseURL string,
+) *Router {
+	r := mux.NewRouter()
 
-// InitRoutes инициализирует маршруты для приложения и возвращает настроенный экземпляр маршрутизатора.
-// Настраивает все доступные эндпоинты, включая обработку сокращения URL, пакетного сокращения,
-// получения URL пользователя, удаления URL, перенаправления и проверки доступности.
-func (r *Router) InitRoutes() *mux.Router {
-	router := mux.NewRouter()
+	shortenHandler := handler.NewShortenHandler(shortener, batch, baseURL)
+	redirectHandler := handler.NewRedirectHandler(getter)
+	userURLsHandler := handler.NewUserURLsHandler(fetcher)
+	deleteHandler := handler.NewDeleteHandler(deleter)
+	pingHandler := handler.NewPingHandler(pinger)
 
-	router.Use(middleware.GzipMiddleware)
-	router.Use(middleware.LoggingMiddleware)
+	r.HandleFunc("/", shortenHandler.HandleShortenURL).Methods("POST")
+	r.HandleFunc("/api/shorten", shortenHandler.HandleShortenURLJSON).Methods("POST")
+	r.HandleFunc("/api/shorten/batch", shortenHandler.HandleBatchShortenURL).Methods("POST")
+	r.HandleFunc("/{id}", redirectHandler.HandleRedirect).Methods("GET")
+	r.HandleFunc("/api/user/urls", userURLsHandler.HandleGetUserURLs).Methods("GET")
+	r.HandleFunc("/api/user/urls", deleteHandler.HandleDeleteURLs).Methods("DELETE")
+	r.HandleFunc("/ping", pingHandler.HandlePing).Methods("GET")
 
-	router.HandleFunc("/", r.handler.HandleShortenURL).Methods(http.MethodPost)
-	router.HandleFunc("/api/shorten", r.handler.HandleShortenURLJSON).Methods(http.MethodPost)
-	router.HandleFunc("/api/shorten/batch", r.handler.HandleBatchShortenURL).Methods(http.MethodPost)
-	router.HandleFunc("/api/user/urls", r.handler.HandleGetUserURLs).Methods(http.MethodGet)
-	router.HandleFunc("/api/user/urls", r.handler.HandleDeleteURLs).Methods(http.MethodDelete)
-	router.HandleFunc("/ping", r.handler.HandlePing).Methods(http.MethodGet)
-	router.HandleFunc("/{id}", r.handler.HandleRedirect).Methods(http.MethodGet)
-
-	router.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logrus.WithFields(logrus.Fields{
-			"uri":    r.RequestURI,
-			"method": r.Method,
-		}).Info("Route not found")
-		http.Error(w, "Not Found", http.StatusBadRequest)
-	})
-
-	router.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logrus.WithFields(logrus.Fields{
-			"uri":    r.RequestURI,
-			"method": r.Method,
-		}).Info("Method not allowed")
-		http.Error(w, "Method not allowed", http.StatusBadRequest)
-	})
-
-	return router
+	return &Router{Router: r}
 }
