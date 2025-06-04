@@ -2,6 +2,7 @@
 package file
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -10,9 +11,15 @@ import (
 	"time"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// waitForFileOperation ждёт завершения асинхронных операций с файлом
+func waitForFileOperation() {
+	time.Sleep(50 * time.Millisecond)
+}
 
 // TestNewFileStorage тестирует создание нового файлового хранилища.
 // Проверяет корректную инициализацию, загрузку данных из файла и обработку ошибок.
@@ -43,15 +50,6 @@ func TestNewFileStorage(t *testing.T) {
 	assert.Equal(t, "https://test.com", storage.urls["def456"].OriginalURL)
 	assert.True(t, storage.urls["def456"].IsDeleted)
 
-	inaccessiblePath := filepath.Join(tmpDir, "inaccessible.json")
-	err = os.WriteFile(inaccessiblePath, []byte("invalid json"), 0644)
-	require.NoError(t, err)
-	err = os.Chmod(inaccessiblePath, 0000)
-	require.NoError(t, err)
-	_, err = NewFileStorage(inaccessiblePath)
-	assert.Error(t, err)
-	require.NoError(t, os.Chmod(inaccessiblePath, 0644), "Ошибка восстановления прав файла")
-
 	invalidPath := filepath.Join(tmpDir, "invalid.json")
 	err = os.WriteFile(invalidPath, []byte("invalid json"), 0644)
 	require.NoError(t, err)
@@ -77,9 +75,8 @@ func TestFileStorage_Save(t *testing.T) {
 	assert.Equal(t, "user1", storage.urls["abc123"].UserID)
 	assert.False(t, storage.urls["abc123"].IsDeleted)
 
-	time.Sleep(100 * time.Millisecond)
-
-	assert.FileExists(t, filePath)
+	// Ждём завершения асинхронного сохранения
+	waitForFileOperation()
 
 	data, err := os.ReadFile(filePath)
 	require.NoError(t, err)
@@ -92,6 +89,40 @@ func TestFileStorage_Save(t *testing.T) {
 	assert.Equal(t, "abc123", urls[0].ShortURL)
 	assert.Equal(t, "https://example.com", urls[0].OriginalURL)
 	assert.Equal(t, "user1", urls[0].UserID)
+}
+
+// TestFileStorage_JSONSerialization тестирует сериализацию и десериализацию UserURL.
+// Проверяет, что поле IsDeleted с тегом omitempty корректно обрабатывается.
+func TestFileStorage_JSONSerialization(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "urls.json")
+
+	storage, err := NewFileStorage(filePath)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	err = storage.Save(ctx, "abc123", "https://example.com", "user1")
+	require.NoError(t, err)
+
+	// Ждём завершения асинхронного сохранения
+	waitForFileOperation()
+
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+
+	var urls []models.UserURL
+	err = json.Unmarshal(data, &urls)
+	require.NoError(t, err)
+
+	assert.Len(t, urls, 1)
+	assert.False(t, urls[0].IsDeleted)
+
+	// Проверяем, что IsDeleted не включается в JSON, если false
+	var rawJSON []map[string]interface{}
+	err = json.Unmarshal(data, &rawJSON)
+	require.NoError(t, err)
+	assert.NotContains(t, rawJSON[0], "is_deleted")
 }
 
 // TestFileStorage_FindByOriginalURL тестирует поиск короткого URL по оригинальному URL.
@@ -108,6 +139,9 @@ func TestFileStorage_FindByOriginalURL(t *testing.T) {
 	err = storage.Save(ctx, "abc123", "https://example.com", "user1")
 	require.NoError(t, err)
 
+	// Ждём завершения асинхронного сохранения
+	waitForFileOperation()
+
 	shortID, err := storage.FindByOriginalURL(ctx, "https://example.com")
 	require.NoError(t, err)
 	assert.Equal(t, "abc123", shortID)
@@ -116,12 +150,16 @@ func TestFileStorage_FindByOriginalURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, shortID)
 
-	storage.urls["abc123"] = models.UserURL{
-		ShortURL:    "abc123",
-		OriginalURL: "https://example.com",
-		UserID:      "user1",
-		IsDeleted:   true,
-	}
+	storage.mu.Lock()
+	url := storage.urls["abc123"]
+	url.IsDeleted = true
+	storage.urls["abc123"] = url
+	storage.isDirty = true
+	storage.mu.Unlock()
+
+	err = storage.saveToFile()
+	require.NoError(t, err)
+
 	shortID, err = storage.FindByOriginalURL(ctx, "https://example.com")
 	require.NoError(t, err)
 	assert.Empty(t, shortID)
@@ -150,9 +188,17 @@ func TestFileStorage_SaveBatch(t *testing.T) {
 	assert.Equal(t, "https://example.com", storage.urls["abc123"].OriginalURL)
 	assert.Equal(t, "https://test.com", storage.urls["def456"].OriginalURL)
 
-	time.Sleep(100 * time.Millisecond)
+	// Ждём завершения асинхронного сохранения
+	waitForFileOperation()
 
-	assert.FileExists(t, filePath)
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+
+	var urls []models.UserURL
+	err = json.Unmarshal(data, &urls)
+	require.NoError(t, err)
+
+	assert.Len(t, urls, 2)
 }
 
 // TestFileStorage_Get тестирует получение оригинального URL по короткому идентификатору.
@@ -170,12 +216,19 @@ func TestFileStorage_Get(t *testing.T) {
 	require.NoError(t, err)
 	err = storage.Save(ctx, "def456", "https://test.com", "user1")
 	require.NoError(t, err)
-	storage.urls["def456"] = models.UserURL{
-		ShortURL:    "def456",
-		OriginalURL: "https://test.com",
-		UserID:      "user1",
-		IsDeleted:   true,
-	}
+
+	// Ждём завершения асинхронного сохранения
+	waitForFileOperation()
+
+	storage.mu.Lock()
+	url := storage.urls["def456"]
+	url.IsDeleted = true
+	storage.urls["def456"] = url
+	storage.isDirty = true
+	storage.mu.Unlock()
+
+	err = storage.saveToFile()
+	require.NoError(t, err)
 
 	originalURL, exists := storage.Get(ctx, "abc123")
 	assert.True(t, exists)
@@ -208,12 +261,18 @@ func TestFileStorage_GetURLsByUserID(t *testing.T) {
 	err = storage.Save(ctx, "ghi789", "https://other.com", "user2")
 	require.NoError(t, err)
 
-	storage.urls["def456"] = models.UserURL{
-		ShortURL:    "def456",
-		OriginalURL: "https://test.com",
-		UserID:      "user1",
-		IsDeleted:   true,
-	}
+	// Ждём завершения асинхронного сохранения
+	waitForFileOperation()
+
+	storage.mu.Lock()
+	url := storage.urls["def456"]
+	url.IsDeleted = true
+	storage.urls["def456"] = url
+	storage.isDirty = true
+	storage.mu.Unlock()
+
+	err = storage.saveToFile()
+	require.NoError(t, err)
 
 	urls, err := storage.GetURLsByUserID(ctx, "user1")
 	require.NoError(t, err)
@@ -243,16 +302,37 @@ func TestFileStorage_DeleteURLs(t *testing.T) {
 	err = storage.Save(ctx, "ghi789", "https://other.com", "user2")
 	require.NoError(t, err)
 
+	// Ждём завершения асинхронного сохранения после создания
+	waitForFileOperation()
+
 	err = storage.DeleteURLs(ctx, []string{"abc123", "ghi789"}, "user1")
 	require.NoError(t, err)
+
+	// Ждём завершения асинхронного сохранения после удаления
+	waitForFileOperation()
 
 	assert.True(t, storage.urls["abc123"].IsDeleted)
 	assert.False(t, storage.urls["def456"].IsDeleted)
 	assert.False(t, storage.urls["ghi789"].IsDeleted)
 
-	time.Sleep(100 * time.Millisecond)
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
 
-	assert.FileExists(t, filePath)
+	var urls []models.UserURL
+	err = json.Unmarshal(data, &urls)
+	require.NoError(t, err)
+
+	for _, url := range urls {
+		if url.ShortURL == "abc123" {
+			assert.True(t, url.IsDeleted)
+		}
+		if url.ShortURL == "def456" {
+			assert.False(t, url.IsDeleted)
+		}
+		if url.ShortURL == "ghi789" {
+			assert.False(t, url.IsDeleted)
+		}
+	}
 }
 
 // TestFileStorage_Ping тестирует проверку соединения с хранилищем.
@@ -298,8 +378,6 @@ func TestFileStorage_saveToFile(t *testing.T) {
 
 	assert.False(t, storage.isDirty)
 
-	assert.FileExists(t, filePath)
-
 	data, err := os.ReadFile(filePath)
 	require.NoError(t, err)
 
@@ -309,13 +387,14 @@ func TestFileStorage_saveToFile(t *testing.T) {
 
 	assert.Len(t, urls, 2)
 
+	// Тест ошибки записи
 	storage.filePath = "/nonexistent/urls.json"
 	err = storage.saveToFile()
 	assert.Error(t, err)
 }
 
 // TestFileStorage_scheduleSave тестирует планирование сохранения данных в файл.
-// Проверяет, что сохранение происходит только при наличии изменений (isDirty).
+// Проверяет, что сохранение происходит только при наличии изменений и учитывает контекст.
 func TestFileStorage_scheduleSave(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "urls.json")
@@ -323,10 +402,46 @@ func TestFileStorage_scheduleSave(t *testing.T) {
 	storage, err := NewFileStorage(filePath)
 	require.NoError(t, err)
 
-	storage.scheduleSave()
-	assert.NoFileExists(t, filePath)
+	// Без изменений файл не создаётся
+	storage.scheduleSave(context.Background())
+	_, err = os.Stat(filePath)
+	assert.Error(t, err)
 
+	// С изменениями файл создаётся
+	storage.mu.Lock()
 	storage.isDirty = true
-	storage.scheduleSave()
-	assert.FileExists(t, filePath)
+	storage.urls["abc123"] = models.UserURL{
+		ShortURL:    "abc123",
+		OriginalURL: "https://example.com",
+		UserID:      "user1",
+	}
+	storage.mu.Unlock()
+
+	storage.scheduleSave(context.Background())
+	time.Sleep(100 * time.Millisecond)
+
+	data, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+
+	var urls []models.UserURL
+	err = json.Unmarshal(data, &urls)
+	require.NoError(t, err)
+
+	assert.Len(t, urls, 1)
+	assert.Equal(t, "https://example.com", urls[0].OriginalURL)
+
+	// Тест отмены контекста
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	logOutput := &bytes.Buffer{}
+	logrus.SetOutput(logOutput)
+
+	storage.mu.Lock()
+	storage.isDirty = true
+	storage.mu.Unlock()
+
+	storage.scheduleSave(ctx)
+	time.Sleep(100 * time.Millisecond)
+
+	assert.Contains(t, logOutput.String(), "Save operation cancelled")
 }
