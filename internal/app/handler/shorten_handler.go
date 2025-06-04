@@ -56,8 +56,12 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 		auth.SetUserIDCookie(w, userID)
 	}
 
+	// Проверяем Content-Type только если это не gzip-сжатый запрос
 	contentType := r.Header.Get("Content-Type")
-	if contentType != "" && !strings.Contains(contentType, "text/plain") {
+	contentEncoding := r.Header.Get("Content-Encoding")
+
+	// Если запрос не сжат gzip, проверяем Content-Type
+	if contentEncoding != "gzip" && contentType != "" && !strings.Contains(contentType, "text/plain") {
 		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
 		return
 	}
