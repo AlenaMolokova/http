@@ -2,6 +2,7 @@
 package handler
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"io"
 	"log"
@@ -37,6 +38,26 @@ func NewShortenHandler(shortener models.URLShortener, batch models.BatchURLShort
 	}
 }
 
+// getBodyReader возвращает правильный reader для тела запроса с учетом gzip-сжатия
+func getBodyReader(r *http.Request) (io.Reader, func(), error) {
+	contentEncoding := r.Header.Get("Content-Encoding")
+
+	if contentEncoding == "gzip" {
+		gzipReader, err := gzip.NewReader(r.Body)
+		if err != nil {
+			return nil, nil, err
+		}
+		cleanup := func() {
+			if closeErr := gzipReader.Close(); closeErr != nil {
+				log.Printf("Failed to close gzip reader: %v", closeErr)
+			}
+		}
+		return gzipReader, cleanup, nil
+	}
+
+	return r.Body, func() {}, nil
+}
+
 // HandleShortenURL обрабатывает запросы на сокращение URL в текстовом формате.
 // Поддерживает HTTP методы POST.
 // Принимает URL в теле запроса в виде текста.
@@ -56,17 +77,25 @@ func (h *ShortenHandler) HandleShortenURL(w http.ResponseWriter, r *http.Request
 		auth.SetUserIDCookie(w, userID)
 	}
 
-	// Проверяем Content-Type только если это не gzip-сжатый запрос
-	contentType := r.Header.Get("Content-Type")
-	contentEncoding := r.Header.Get("Content-Encoding")
-
-	// Если запрос не сжат gzip, проверяем Content-Type
-	if contentEncoding != "gzip" && contentType != "" && !strings.Contains(contentType, "text/plain") {
-		http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
+	// Получаем правильный reader для тела запроса
+	bodyReader, cleanup, err := getBodyReader(r)
+	if err != nil {
+		http.Error(w, "Failed to create gzip reader", http.StatusBadRequest)
 		return
 	}
+	defer cleanup()
 
-	body, err := io.ReadAll(r.Body)
+	// Проверяем Content-Type только для не-gzip запросов
+	contentEncoding := r.Header.Get("Content-Encoding")
+	if contentEncoding != "gzip" {
+		contentType := r.Header.Get("Content-Type")
+		if contentType != "" && !strings.Contains(contentType, "text/plain") {
+			http.Error(w, "Content-Type must be text/plain", http.StatusBadRequest)
+			return
+		}
+	}
+
+	body, err := io.ReadAll(bodyReader)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
 		return
@@ -130,6 +159,15 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
 	}
+
+	// Получаем правильный reader для тела запроса
+	bodyReader, cleanup, err := getBodyReader(r)
+	if err != nil {
+		http.Error(w, "Failed to create gzip reader", http.StatusBadRequest)
+		return
+	}
+	defer cleanup()
+
 	defer func() {
 		if closeErr := r.Body.Close(); closeErr != nil {
 			log.Printf("Failed to close request body: %v", closeErr)
@@ -139,7 +177,7 @@ func (h *ShortenHandler) HandleShortenURLJSON(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 
 	var req models.ShortenRequest
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(bodyReader)
 	if err := decoder.Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); encErr != nil {
@@ -211,6 +249,15 @@ func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Re
 		http.Error(w, "Empty request body", http.StatusBadRequest)
 		return
 	}
+
+	// Получаем правильный reader для тела запроса
+	bodyReader, cleanup, err := getBodyReader(r)
+	if err != nil {
+		http.Error(w, "Failed to create gzip reader", http.StatusBadRequest)
+		return
+	}
+	defer cleanup()
+
 	defer func() {
 		if closeErr := r.Body.Close(); closeErr != nil {
 			log.Printf("Failed to close request body: %v", closeErr)
@@ -220,7 +267,7 @@ func (h *ShortenHandler) HandleBatchShortenURL(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", "application/json")
 
 	var req []models.BatchShortenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(bodyReader).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"}); encErr != nil {
 			log.Printf("Failed to encode error response: %v", encErr)
