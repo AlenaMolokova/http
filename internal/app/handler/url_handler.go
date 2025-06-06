@@ -1,37 +1,34 @@
-// Package handler реализует обработчики HTTP-запросов для приложения.
+// Package handler реализует обработчики HTTP-запросов для сервиса сокращения URL.
 package handler
 
 import (
-	"net/http"
-
 	"github.com/AlenaMolokova/http/internal/app/models"
-	"github.com/gorilla/mux"
 )
 
-// URLHandler представляет собой основной обработчик URL,
-// содержащий все специализированные обработчики и роутер.
+// URLHandler объединяет все обработчики сервиса.
+//
+// Используется для регистрации всех эндпоинтов в роутере.
 type URLHandler struct {
-	router          *mux.Router
-	ShortenHandler  *ShortenHandler
-	RedirectHandler *RedirectHandler
-	UserURLsHandler *UserURLsHandler
-	DeleteHandler   *DeleteHandler
-	PingHandler     *PingHandler
+	ShortenHandler  *ShortenHandler  // Обработчик сокращения URL
+	RedirectHandler *RedirectHandler // Обработчик перенаправления по короткому URL
+	UserURLsHandler *UserURLsHandler // Обработчик получения URL пользователя
+	DeleteHandler   *DeleteHandler   // Обработчик удаления URL
+	PingHandler     *PingHandler     // Обработчик проверки соединения с хранилищем
 }
 
-// NewURLHandler создает новый основной обработчик URL со всеми подобработчиками.
+// NewURLHandler создает объединённый хендлер для всех маршрутов сервиса.
 //
 // Параметры:
-//   - shortener: сервис для сокращения URL
-//   - batch: сервис для пакетного сокращения URL
-//   - getter: сервис для получения оригинальных URL
-//   - fetcher: сервис для получения URL пользователя
-//   - deleter: сервис для удаления URL
-//   - pinger: сервис для проверки соединения
-//   - baseURL: базовый URL сервиса
+//   - shortener: интерфейс сокращения URL
+//   - batch: интерфейс пакетного сокращения URL
+//   - getter: интерфейс получения оригинальных URL по коротким
+//   - fetcher: интерфейс получения всех URL пользователя
+//   - deleter: интерфейс удаления URL
+//   - pinger: интерфейс проверки соединения с хранилищем
+//   - baseURL: базовый URL приложения
 //
 // Возвращает:
-//   - *URLHandler: новый основной обработчик
+//   - *URLHandler: агрегированный обработчик
 func NewURLHandler(
 	shortener models.URLShortener,
 	batch models.BatchURLShortener,
@@ -41,58 +38,11 @@ func NewURLHandler(
 	pinger models.Pinger,
 	baseURL string,
 ) *URLHandler {
-	// Создаем отдельные обработчики
-	shortenHandler := &ShortenHandler{
-		shortener: shortener,
-		batch:     batch,
-		baseURL:   baseURL,
-	}
-	redirectHandler := &RedirectHandler{
-		redirector: getter,
-	}
-	userURLsHandler := &UserURLsHandler{
-		fetcher: fetcher,
-	}
-	deleteHandler := &DeleteHandler{
-		deleter: deleter,
-	}
-	pingHandler := &PingHandler{
-		pinger: pinger,
-	}
-
-	// Создаем роутер напрямую
-	mainRouter := mux.NewRouter()
-
-	// Настраиваем маршруты для сокращения URL
-	shortenRouter := mainRouter.PathPrefix("/").Subrouter()
-	shortenRouter.HandleFunc("/", shortenHandler.HandleShortenURL).Methods("POST")
-	shortenRouter.HandleFunc("/api/shorten", shortenHandler.HandleShortenURLJSON).Methods("POST")
-	shortenRouter.HandleFunc("/api/shorten/batch", shortenHandler.HandleBatchShortenURL).Methods("POST")
-
-	// Настраиваем маршруты для перенаправления
-	redirectRouter := mainRouter.PathPrefix("/").Subrouter()
-	redirectRouter.HandleFunc("/{id}", redirectHandler.HandleRedirect).Methods("GET")
-
-	// Настраиваем маршруты для пользователей
-	userRouter := mainRouter.PathPrefix("/api/user").Subrouter()
-	userRouter.HandleFunc("/urls", userURLsHandler.HandleGetUserURLs).Methods("GET")
-	userRouter.HandleFunc("/urls", deleteHandler.HandleDeleteURLs).Methods("DELETE")
-
-	// Настраиваем маршрут для проверки соединения
-	healthRouter := mainRouter.PathPrefix("/").Subrouter()
-	healthRouter.HandleFunc("/ping", pingHandler.HandlePing).Methods("GET")
-
 	return &URLHandler{
-		router:          mainRouter,
-		ShortenHandler:  shortenHandler,
-		RedirectHandler: redirectHandler,
-		UserURLsHandler: userURLsHandler,
-		DeleteHandler:   deleteHandler,
-		PingHandler:     pingHandler,
+		ShortenHandler:  NewShortenHandler(shortener, batch, baseURL),
+		RedirectHandler: NewRedirectHandler(getter),
+		UserURLsHandler: NewUserURLsHandler(fetcher),
+		DeleteHandler:   NewDeleteHandler(deleter),
+		PingHandler:     NewPingHandler(pinger),
 	}
-}
-
-// ServeHTTP реализует интерфейс http.Handler для URLHandler.
-func (h *URLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.router.ServeHTTP(w, r)
 }

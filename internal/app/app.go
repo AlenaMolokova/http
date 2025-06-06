@@ -3,11 +3,12 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/AlenaMolokova/http/internal/app/config"
 	"github.com/AlenaMolokova/http/internal/app/generator"
-	"github.com/AlenaMolokova/http/internal/app/handler"
+	"github.com/AlenaMolokova/http/internal/app/router"
 	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/AlenaMolokova/http/internal/app/storage"
 	"github.com/sirupsen/logrus"
@@ -16,7 +17,7 @@ import (
 // App представляет собой основную структуру приложения,
 // содержащую обработчик URL, сервисный слой и хранилище.
 type App struct {
-	Handler *handler.URLHandler
+	Handler http.Handler
 	Service *service.Service
 	Storage *storage.Storage
 }
@@ -121,8 +122,8 @@ func NewApp(cfg *config.Config) (*App, error) {
 		cfg.BaseURL,
 	)
 
-	// Создаем основной обработчик с роутером
-	urlHandler := handler.NewURLHandler(
+	// Создаем роутер
+	urlRouter := router.NewRouter(
 		urlService, // URLShortener
 		urlService, // BatchURLShortener
 		urlService, // URLGetter
@@ -133,7 +134,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 	)
 
 	return &App{
-		Handler: urlHandler,
+		Handler: urlRouter,
 		Service: urlService,
 		Storage: urlStorage,
 	}, nil

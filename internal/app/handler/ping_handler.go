@@ -55,8 +55,8 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		// Проверяем специальные случаи для файлового и in-memory хранилищ
 		if err.Error() == "file storage does not support database connection check" ||
 			err.Error() == "memory storage does not support database connection check" {
-			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
 			if _, writeErr := w.Write([]byte("Storage does not require database connection")); writeErr != nil {
 				logrus.WithError(writeErr).Error("Failed to write response")
 			}
@@ -67,8 +67,8 @@ func (h *PingHandler) HandlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
 	if _, writeErr := w.Write([]byte("Database connection is OK")); writeErr != nil {
 		logrus.WithError(writeErr).Error("Failed to write response")
 	}
