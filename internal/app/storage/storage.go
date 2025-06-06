@@ -2,6 +2,8 @@
 package storage
 
 import (
+	"io"
+
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/AlenaMolokova/http/internal/app/storage/database"
 	"github.com/AlenaMolokova/http/internal/app/storage/file"
@@ -113,4 +115,16 @@ func (s *Storage) AsURLDeleter() models.URLDeleter {
 //   - models.Pinger: interface for checking connection to storage
 func (s *Storage) AsPinger() models.Pinger {
 	return s.impl.(models.Pinger)
+}
+
+// Close закрывает хранилище и освобождает ресурсы.
+// Для файлового хранилища обеспечивает сохранение всех данных в файл.
+//
+// Возвращает:
+//   - ошибку, если не удалось корректно закрыть хранилище
+func (s *Storage) Close() error {
+	if closer, ok := s.impl.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }

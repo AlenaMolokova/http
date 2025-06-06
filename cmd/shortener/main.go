@@ -54,6 +54,13 @@ func run() error {
 		return fmt.Errorf("ошибка инициализации: %w", err)
 	}
 
+	// Обеспечиваем корректное закрытие приложения
+	defer func() {
+		if closeErr := appInstance.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("Ошибка при закрытии приложения")
+		}
+	}()
+
 	server := &http.Server{
 		Addr:         cfg.ServerAddress,
 		Handler:      appInstance.Handler,

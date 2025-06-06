@@ -14,10 +14,11 @@ import (
 )
 
 // App представляет собой основную структуру приложения,
-// содержащую обработчик URL и сервисный слой.
+// содержащую обработчик URL, сервисный слой и хранилище.
 type App struct {
 	Handler *handler.URLHandler
 	Service *service.Service
+	Storage *storage.Storage
 }
 
 // GenerateTestLoad генерирует тестовую нагрузку, создавая указанное
@@ -65,6 +66,18 @@ func (a *App) GenerateTestLoad(count int) {
 			}
 		}
 	}
+}
+
+// Close завершает работу приложения и закрывает все ресурсы.
+// Обеспечивает корректное сохранение данных при завершении работы.
+//
+// Возвращает:
+//   - ошибку, если не удалось корректно закрыть ресурсы
+func (a *App) Close() error {
+	if a.Storage != nil {
+		return a.Storage.Close()
+	}
+	return nil
 }
 
 func min(a, b int) int {
@@ -122,5 +135,6 @@ func NewApp(cfg *config.Config) (*App, error) {
 	return &App{
 		Handler: urlHandler,
 		Service: urlService,
+		Storage: urlStorage,
 	}, nil
 }
