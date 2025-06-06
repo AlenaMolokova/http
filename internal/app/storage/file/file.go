@@ -6,8 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/sirupsen/logrus"
@@ -18,35 +21,53 @@ import (
 // в памяти для быстрого доступа. Поддерживает конкурентный доступ через
 // механизмы синхронизации.
 type FileStorage struct {
-	filePath  string
-	urls      map[string]models.UserURL
-	mu        sync.RWMutex
-	isDirty   bool
-	flushLock sync.Mutex
+	filePath   string
+	urls       map[string]models.UserURL
+	mu         sync.RWMutex
+	isDirty    bool
+	flushLock  sync.Mutex
+	saveTimer  *time.Timer
+	timerMutex sync.Mutex
 }
 
 // NewFileStorage создаёт и инициализирует новое файловое хранилище URL-адресов.
 // Если указанный файл существует, данные загружаются из него.
-// Если файл не существует, создаётся пустое хранилище.
+// Если файл не существует, создаётся пустое хранилище и файл с необходимыми директориями.
 //
 // Параметры:
 //   - filePath: путь к файлу для хранения данных
 //
 // Возвращает:
 //   - *FileStorage: указатель на инициализированное хранилище
-//   - error: ошибка, если не удалось открыть или десериализовать файл
+//   - error: ошибка, если не удалось открыть, создать или десериализовать файл
 func NewFileStorage(filePath string) (*FileStorage, error) {
 	fs := &FileStorage{
 		filePath: filePath,
 		urls:     make(map[string]models.UserURL),
 	}
 
+	// Создаём директорию для файла, если она не существует
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		logrus.WithError(err).Errorf("Failed to create directory for %s", filePath)
+		return nil, err
+	}
+
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		// Создаём файл с правильными правами доступа
+		file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			logrus.WithError(err).Errorf("Failed to create file %s", filePath)
+			return nil, err
+		}
+		if err := file.Close(); err != nil {
+			logrus.WithError(err).Errorf("Failed to close file %s during creation", filePath)
+		}
 		return fs, nil
 	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
+		logrus.WithError(err).Errorf("Failed to open file %s", filePath)
 		return nil, err
 	}
 	defer func() {
@@ -57,7 +78,8 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 
 	decoder := json.NewDecoder(file)
 	var entries []models.UserURL
-	if err := decoder.Decode(&entries); err != nil {
+	if err := decoder.Decode(&entries); err != nil && err != io.EOF {
+		logrus.WithError(err).Errorf("Failed to decode JSON from %s", filePath)
 		return nil, err
 	}
 
@@ -69,7 +91,7 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 }
 
 // Save сохраняет новый URL-адрес в хранилище.
-// Сохранение в файл происходит асинхронно.
+// Сохранение в файл происходит с небольшой задержкой для группировки операций.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
@@ -78,7 +100,7 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 //   - userID: идентификатор пользователя, который создал сокращение
 //
 // Возвращает:
-//   - error: nil, так как ошибки игнорируются в текущей реализации
+//   - error: ошибка, если сохранение не удалось
 func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	fs.mu.Lock()
 	fs.urls[shortID] = models.UserURL{
@@ -90,7 +112,7 @@ func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID st
 	fs.isDirty = true
 	fs.mu.Unlock()
 
-	go fs.scheduleSave(ctx)
+	fs.scheduleSaveWithDelay(ctx)
 	return nil
 }
 
@@ -102,7 +124,7 @@ func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID st
 //
 // Возвращает:
 //   - string: сокращённый идентификатор, если URL найден
-//   - error: nil, так как ошибки игнорируются в текущей реализации
+//   - error: ошибка, если поиск не удался
 func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -116,7 +138,7 @@ func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string
 }
 
 // SaveBatch сохраняет пакет URL-адресов в хранилище.
-// Сохранение в файл происходит асинхронно.
+// Сохранение в файл происходит с небольшой задержкой для группировки операций.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
@@ -124,7 +146,7 @@ func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string
 //   - userID: идентификатор пользователя, которому принадлежат URL-адреса
 //
 // Возвращает:
-//   - error: nil, так как ошибки игнорируются в текущей реализации
+//   - error: ошибка, если сохранение не удалось
 func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
 	for shortID, originalURL := range items {
@@ -138,7 +160,7 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, u
 	fs.isDirty = true
 	fs.mu.Unlock()
 
-	go fs.scheduleSave(ctx)
+	fs.scheduleSaveWithDelay(ctx)
 	return nil
 }
 
@@ -170,7 +192,7 @@ func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 //
 // Возвращает:
 //   - []models.UserURL: список структур UserURL, содержащих сокращённые и оригинальные URL-адреса
-//   - error: nil, так как ошибки игнорируются в текущей реализации
+//   - error: ошибка, если получение не удалось
 func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -185,7 +207,7 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 }
 
 // DeleteURLs помечает указанные URL-адреса как удалённые.
-// Фактическое обновление файла происходит асинхронно.
+// Фактическое обновление файла происходит с небольшой задержкой.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
@@ -193,7 +215,7 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 //   - userID: идентификатор пользователя, которому принадлежат URL-адреса
 //
 // Возвращает:
-//   - error: nil, так как ошибки игнорируются в текущей реализации
+//   - error: ошибка, если удаление не удалось
 func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	fs.mu.Lock()
 	for _, shortID := range shortIDs {
@@ -205,7 +227,7 @@ func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID
 	fs.isDirty = true
 	fs.mu.Unlock()
 
-	go fs.scheduleSave(ctx)
+	fs.scheduleSaveWithDelay(ctx)
 	return nil
 }
 
@@ -221,21 +243,33 @@ func (fs *FileStorage) Ping(ctx context.Context) error {
 	return errors.New("file storage does not support database connection check")
 }
 
-// scheduleSave инициирует сохранение данных в файл, если есть изменения.
-// Сохранение выполняется с блокировкой для предотвращения одновременных записей.
+// scheduleSaveWithDelay планирует сохранение данных с задержкой для группировки операций.
+// Использует таймер для отложенного выполнения сохранения.
 //
 // Параметры:
 //   - ctx: контекст для отслеживания отмены операции
-func (fs *FileStorage) scheduleSave(ctx context.Context) {
+func (fs *FileStorage) scheduleSaveWithDelay(ctx context.Context) {
+	fs.timerMutex.Lock()
+	defer fs.timerMutex.Unlock()
+
+	// Отменяем предыдущий таймер, если он существует
+	if fs.saveTimer != nil {
+		fs.saveTimer.Stop()
+	}
+
+	// Создаем новый таймер на 100ms
+	fs.saveTimer = time.AfterFunc(100*time.Millisecond, func() {
+		fs.performSave(ctx)
+	})
+}
+
+// performSave выполняет фактическое сохранение данных в файл.
+//
+// Параметры:
+//   - ctx: контекст для отслеживания отмены операции
+func (fs *FileStorage) performSave(ctx context.Context) {
 	fs.flushLock.Lock()
 	defer fs.flushLock.Unlock()
-
-	select {
-	case <-ctx.Done():
-		logrus.Warn("Save operation cancelled due to context cancellation")
-		return
-	default:
-	}
 
 	fs.mu.RLock()
 	dirty := fs.isDirty
@@ -245,8 +279,29 @@ func (fs *FileStorage) scheduleSave(ctx context.Context) {
 		return
 	}
 
-	if err := fs.saveToFile(); err != nil {
-		logrus.WithError(err).Errorf("Failed to save file storage to %s", fs.filePath)
+	// Проверяем, не был ли контекст отменен
+	select {
+	case <-ctx.Done():
+		logrus.Warn("Save operation cancelled due to context cancellation, attempting save with timeout")
+		// Создаем новый контекст с коротким таймаутом для завершения сохранения
+		saveCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+
+		if err := fs.saveToFile(); err != nil {
+			logrus.WithError(err).Errorf("Failed to save file storage to %s during shutdown", fs.filePath)
+			return
+		}
+		logrus.Infof("Successfully saved file storage to %s during shutdown", fs.filePath)
+
+		select {
+		case <-saveCtx.Done():
+			logrus.Warn("Save operation timed out during shutdown")
+		default:
+		}
+	default:
+		if err := fs.saveToFile(); err != nil {
+			logrus.WithError(err).Errorf("Failed to save file storage to %s", fs.filePath)
+		}
 	}
 }
 
@@ -256,9 +311,16 @@ func (fs *FileStorage) scheduleSave(ctx context.Context) {
 // Возвращает:
 //   - error: ошибка при создании, записи или переименовании файла
 func (fs *FileStorage) saveToFile() error {
+	// Создаём директорию для временного файла
+	if err := os.MkdirAll(filepath.Dir(fs.filePath), 0755); err != nil {
+		logrus.WithError(err).Errorf("Failed to create directory for %s", fs.filePath)
+		return err
+	}
+
 	tmpFilePath := fs.filePath + ".tmp"
-	file, err := os.Create(tmpFilePath)
+	file, err := os.OpenFile(tmpFilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
+		logrus.WithError(err).Errorf("Failed to create temporary file %s", tmpFilePath)
 		return err
 	}
 
@@ -277,22 +339,26 @@ func (fs *FileStorage) saveToFile() error {
 		_ = writer.Flush()
 		_ = file.Close()
 		_ = os.Remove(tmpFilePath)
+		logrus.WithError(err).Errorf("Failed to encode JSON to %s", tmpFilePath)
 		return err
 	}
 
 	if err := writer.Flush(); err != nil {
 		_ = file.Close()
 		_ = os.Remove(tmpFilePath)
+		logrus.WithError(err).Errorf("Failed to flush writer for %s", tmpFilePath)
 		return err
 	}
 
 	if err := file.Close(); err != nil {
 		_ = os.Remove(tmpFilePath)
+		logrus.WithError(err).Errorf("Failed to close file %s", tmpFilePath)
 		return err
 	}
 
 	if err := os.Rename(tmpFilePath, fs.filePath); err != nil {
 		_ = os.Remove(tmpFilePath)
+		logrus.WithError(err).Errorf("Failed to rename %s to %s", tmpFilePath, fs.filePath)
 		return err
 	}
 
@@ -300,5 +366,6 @@ func (fs *FileStorage) saveToFile() error {
 	fs.isDirty = false
 	fs.mu.Unlock()
 
+	logrus.Infof("Successfully saved file storage to %s", fs.filePath)
 	return nil
 }
