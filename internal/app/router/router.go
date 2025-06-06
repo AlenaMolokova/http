@@ -38,6 +38,7 @@ func NewRouter(
 	deleteHandler := handler.NewDeleteHandler(deleter)
 	pingHandler := handler.NewPingHandler(pinger)
 
+	r.HandleFunc("/ping", pingHandler.HandlePing).Methods("GET")
 	r.HandleFunc("/", shortenHandler.HandleShortenURL).Methods("POST")
 	r.HandleFunc("/api/shorten", shortenHandler.HandleShortenURLJSON).Methods("POST")
 	r.HandleFunc("/api/shorten/batch", shortenHandler.HandleBatchShortenURL).Methods("POST")
