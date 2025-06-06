@@ -33,6 +33,12 @@ func NewPostgresStorage(dsn string) (*DatabaseStorage, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
+	// Проверяем соединение
+	if err := pool.Ping(context.Background()); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
 	_, err = pool.Exec(context.Background(), CreateURLsTable)
 	if err != nil {
 		pool.Close()
@@ -198,6 +204,9 @@ func (db *DatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, us
 // Возвращает:
 //   - ошибку, если база данных недоступна
 func (db *DatabaseStorage) Ping(ctx context.Context) error {
+	if db.pool == nil {
+		return fmt.Errorf("database pool is nil")
+	}
 	return db.pool.Ping(ctx)
 }
 
@@ -206,6 +215,8 @@ func (db *DatabaseStorage) Ping(ctx context.Context) error {
 // Возвращает:
 //   - ошибку, если не удалось корректно закрыть соединение
 func (db *DatabaseStorage) Close() error {
-	db.pool.Close()
+	if db.pool != nil {
+		db.pool.Close()
+	}
 	return nil
 }
