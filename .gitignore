@@ -7,6 +7,8 @@
 
 # Test binary, built with `go test -c`
 *.test
+*.tmp
+urls.json
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
@@ -21,3 +23,6 @@ vendor/
 # IDEs directories
 .idea
 .vscode
+
+# Large files (>100MB)
+internal/app/storage/test_urls.json
