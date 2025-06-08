@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -69,6 +70,13 @@ func run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Настройка TLS для HTTPS
+	if cfg.EnableHTTPS {
+		server.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
 	// Канал для graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -78,9 +86,16 @@ func run() error {
 
 	// Запускаем сервер в отдельной горутине
 	go func() {
-		logrus.Infof("Сервер запущен на %s", cfg.ServerAddress)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			serverErr <- fmt.Errorf("ошибка запуска сервера: %w", err)
+		if cfg.EnableHTTPS {
+			logrus.Infof("HTTPS сервер запущен на %s", cfg.ServerAddress)
+			if err := server.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil && err != http.ErrServerClosed {
+				serverErr <- fmt.Errorf("ошибка запуска HTTPS сервера: %w", err)
+			}
+		} else {
+			logrus.Infof("HTTP сервер запущен на %s", cfg.ServerAddress)
+			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				serverErr <- fmt.Errorf("ошибка запуска HTTP сервера: %w", err)
+			}
 		}
 	}()
 
