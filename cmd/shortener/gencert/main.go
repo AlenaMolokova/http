@@ -49,7 +49,6 @@ func generateCertificate() error {
 		return fmt.Errorf("ошибка создания сертификата: %w", err)
 	}
 
-	
 	// Сохраняем сертификат в файл
 	certOut, err := os.Create("server.crt")
 	if err != nil {
