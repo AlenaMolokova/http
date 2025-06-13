@@ -1,0 +1,5 @@
+{
+    "server_address": "localhost:9090",
+    "base_url": "http://localhost:9090",
+    "enable_https": false
+}
