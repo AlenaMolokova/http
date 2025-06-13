@@ -1,0 +1,13 @@
+linters:
+  enable:
+    - noosexit
+    - errcheck
+    - staticcheck
+    # Другие линтеры из cmd/staticlint/main.go
+linters-settings:
+  noosexit:
+    exclude-dirs:
+      - cmd/staticlint/noosexit/testdata
+run:
+  skip-dirs:
+    - cmd/staticlint/noosexit/testdata
