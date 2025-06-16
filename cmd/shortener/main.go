@@ -1,3 +1,5 @@
+// Package main реализует точку входа в приложение сокращения URL.
+// Поддерживает корректное завершение работы (graceful shutdown) по сигналам SIGINT, SIGTERM, SIGQUIT.
 package main
 
 import (
@@ -45,7 +47,12 @@ func getValue(v string) string {
 	return v
 }
 
-// run запускает основную логику приложения.
+// run запускает сервер приложения и обрабатывает его завершение по сигналам.
+// Реализует graceful shutdown: завершает активные соединения, сохраняет данные
+// и корректно закрывает ресурсы при получении сигнала SIGINT, SIGTERM или SIGQUIT.
+//
+// Возвращает:
+//   - ошибку, если запуск или остановка сервера завершились неудачно
 func run() error {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	cfg := config.NewConfig()
@@ -70,21 +77,20 @@ func run() error {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Настройка TLS для HTTPS
 	if cfg.EnableHTTPS {
 		server.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		}
 	}
 
-	// Канал для graceful shutdown
+	// Канал для graceful shutdown по сигналам
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 
 	// Канал для ошибок сервера
 	serverErr := make(chan error, 1)
 
-	// Запускаем сервер в отдельной горутине
+	// Запускаем HTTP/HTTPS сервер в фоне
 	go func() {
 		if cfg.EnableHTTPS {
 			logrus.Infof("HTTPS сервер запущен на %s", cfg.ServerAddress)
@@ -99,10 +105,7 @@ func run() error {
 		}
 	}()
 
-	// Небольшая задержка для старта сервера
-	time.Sleep(100 * time.Millisecond)
-
-	// Ожидаем сигнал остановки или ошибку сервера
+	// Ожидаем сигнал завершения или ошибку сервера
 	select {
 	case err := <-serverErr:
 		return err
@@ -110,11 +113,10 @@ func run() error {
 		logrus.Infof("Получен сигнал остановки: %v, завершаем работу...", sig)
 	}
 
-	// Создаем контекст с таймаутом для graceful shutdown
+	// Контекст с таймаутом для завершения активных соединений
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Останавливаем HTTP сервер
 	if err := server.Shutdown(ctx); err != nil {
 		logrus.WithError(err).Error("Ошибка при остановке сервера")
 		return err
