@@ -36,8 +36,11 @@ func (a *App) GenerateTestLoad(count int) {
 
 	logrus.Info("Generating test load: ", count, " URLs")
 
+	// Создаем временный генератор для создания тестовых URL
+	testGenerator := generator.New(4)
+
 	for i := 0; i < count; i++ {
-		originalURL := "https://example.com/" + time.Now().String() + "/" + generator.NewGenerator(4).Generate()
+		originalURL := "https://example.com/" + time.Now().String() + "/" + testGenerator.Generate()
 		_, err := a.Service.ShortenURL(ctx, originalURL, userID)
 		if err != nil {
 			logrus.WithError(err).Warn("Failed to shorten URL during test load")
@@ -108,9 +111,11 @@ func NewApp(cfg *config.Config) (*App, error) {
 	}
 
 	// Создаем генератор коротких идентификаторов
-	urlGenerator := generator.NewGenerator(8)
+	// Используем конкретную реализацию, которая будет передана в сервис как интерфейс
+	urlGenerator := generator.New(8)
 
 	// Инициализируем сервисный слой
+	// Сервис получает конкретную реализацию, но работает через свой интерфейс IDGenerator
 	urlService := service.NewService(
 		urlStorage.AsURLSaver(),
 		urlStorage.AsURLBatchSaver(),
@@ -118,7 +123,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		urlStorage.AsURLFetcher(),
 		urlStorage.AsURLDeleter(),
 		urlStorage.AsPinger(),
-		urlGenerator,
+		urlGenerator, // *generator.SimpleGenerator автоматически реализует service.IDGenerator
 		cfg.BaseURL,
 	)
 

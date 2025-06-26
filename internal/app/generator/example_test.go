@@ -10,7 +10,7 @@ import (
 // Пример создания генератора и получения случайного идентификатора
 func ExampleNewGenerator() {
 	// Создаем генератор для идентификаторов длиной 8 символов
-	gen := generator.NewGenerator(8)
+	gen := generator.New(8)
 
 	// Получаем случайный идентификатор
 	id := gen.Generate()
@@ -24,7 +24,7 @@ func ExampleNewGenerator() {
 // Пример использования генератора для создания нескольких идентификаторов
 func ExampleGenerator_Generate() {
 	// Создаем генератор для коротких идентификаторов
-	gen := generator.NewGenerator(4)
+	gen := generator.New(4)
 
 	// Генерируем несколько идентификаторов
 	id1 := gen.Generate()

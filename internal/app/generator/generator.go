@@ -7,18 +7,9 @@ import (
 	"time"
 )
 
-// Generator определяет интерфейс для генерации случайных коротких идентификаторов.
-// Он используется для создания уникальных идентификаторов для сокращенных URL.
-type Generator interface {
-	// Generate создает новый уникальный идентификатор.
-	//
-	// Возвращает:
-	//   - string: сгенерированный идентификатор
-	Generate() string
-}
-
-// SimpleGenerator реализует интерфейс Generator для создания случайных строк
+// SimpleGenerator реализует генерацию случайных строк
 // с использованием алфавитно-цифровых символов.
+// Структура потокобезопасна благодаря использованию мьютекса.
 type SimpleGenerator struct {
 	letters string     // Набор символов для генерации
 	length  int        // Длина генерируемых идентификаторов
@@ -27,14 +18,15 @@ type SimpleGenerator struct {
 	buffer  []byte     // Буфер для формирования случайной строки
 }
 
-// NewGenerator создает и инициализирует новый экземпляр генератора с заданной длиной идентификатора.
+// New создает и инициализирует новый экземпляр генератора с заданной длиной идентификатора.
+// Функция переименована с NewGenerator на New для соответствию Go convention.
 //
 // Параметры:
 //   - length: желаемая длина генерируемых идентификаторов
 //
 // Возвращает:
-//   - Generator: новый экземпляр генератора
-func NewGenerator(length int) Generator {
+//   - *SimpleGenerator: новый экземпляр генератора
+func New(length int) *SimpleGenerator {
 	return &SimpleGenerator{
 		letters: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
 		length:  length,

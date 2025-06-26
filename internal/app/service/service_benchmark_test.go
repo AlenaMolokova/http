@@ -11,7 +11,7 @@ import (
 
 func BenchmarkShortenURL(b *testing.B) {
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewGenerator(8)
+	generator := generator.New(8)
 	s := NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	ctx := context.Background()
 	originalURL := "https://example.com"
@@ -28,7 +28,7 @@ func BenchmarkShortenURL(b *testing.B) {
 
 func BenchmarkShortenBatch(b *testing.B) {
 	storage := memory.NewMemoryStorage()
-	generator := generator.NewGenerator(8)
+	generator := generator.New(8)
 	s := NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	ctx := context.Background()
 	batch := []models.BatchShortenRequest{

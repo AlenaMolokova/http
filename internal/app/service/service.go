@@ -6,9 +6,19 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/models"
 )
+
+// IDGenerator определяет интерфейс для генерации случайных коротких идентификаторов.
+// Потребитель (service) определяет интерфейс, который ему необходим для работы.
+// Это обеспечивает слабую связанность и следует принципу инверсии зависимостей.
+type IDGenerator interface {
+	// Generate создает новый уникальный идентификатор.
+	//
+	// Возвращает:
+	//   - string: сгенерированный идентификатор
+	Generate() string
+}
 
 // Service представляет собой слой бизнес-логики для сервиса сокращения URL.
 // Он обрабатывает сокращение URL, получение оригинальных URL по сокращенным идентификаторам,
@@ -20,7 +30,7 @@ type Service struct {
 	fetcher   models.URLFetcher
 	deleter   models.URLDeleter
 	pinger    models.Pinger
-	generator generator.Generator
+	generator IDGenerator // Используем интерфейс, объявленный в этом пакете
 	BaseURL   string
 	cache     map[string][]models.UserURL
 	cacheMu   sync.RWMutex
@@ -35,12 +45,12 @@ type Service struct {
 //   - fetcher: интерфейс для получения всех URL, связанных с конкретным пользователем
 //   - deleter: интерфейс для удаления URL
 //   - pinger: интерфейс для проверки соединения с хранилищем
-//   - generator: генератор коротких идентификаторов
+//   - generator: генератор коротких идентификаторов (может быть любая реализация IDGenerator)
 //   - baseURL: базовый URL сервиса, используемый для создания полных сокращенных URL
 //
 // Возвращает:
 //   - *Service: указатель на новый экземпляр сервиса
-func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, generator generator.Generator, baseURL string) *Service {
+func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, generator IDGenerator, baseURL string) *Service {
 	return &Service{
 		saver:     saver,
 		batch:     batch,
