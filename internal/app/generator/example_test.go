@@ -8,7 +8,7 @@ import (
 )
 
 // Пример создания генератора и получения случайного идентификатора
-func ExampleNewGenerator() {
+func ExampleNew() {
 	// Создаем генератор для идентификаторов длиной 8 символов
 	gen := generator.New(8)
 
@@ -16,13 +16,12 @@ func ExampleNewGenerator() {
 	id := gen.Generate()
 
 	// Просто выводим длину полученного идентификатора
-	// так как само значение случайное
 	fmt.Printf("Длина идентификатора: %d\n", len(id))
 	// Output: Длина идентификатора: 8
 }
 
 // Пример использования генератора для создания нескольких идентификаторов
-func ExampleGenerator_Generate() {
+func ExampleSimpleGenerator_Generate() {
 	// Создаем генератор для коротких идентификаторов
 	gen := generator.New(4)
 
@@ -48,11 +47,4 @@ func ExampleGenerator_Generate() {
 	// Output:
 	// Все идентификаторы имеют длину 4: true
 	// Все идентификаторы содержат допустимые символы: true
-}
-
-// Пример использования генератора в контексте сервиса сокращения URL
-func ExampleSimpleGenerator_Generate() {
-	// URL успешно сокращен
-	fmt.Println("URL успешно сокращен")
-	// Output: URL успешно сокращен
 }

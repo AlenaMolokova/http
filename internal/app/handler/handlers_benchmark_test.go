@@ -17,6 +17,7 @@ import (
 
 // Benchmark для HandleShortenURL с различными сценариями
 func BenchmarkHandleShortenURL(b *testing.B) {
+	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
 	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
@@ -44,6 +45,7 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 				req.Header.Set("Content-Type", "text/plain")
 
 				rr := httptest.NewRecorder()
+				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.ShortenHandler.HandleShortenURL(rr, req)
 
 				// Проверяем успешность запроса
@@ -117,6 +119,7 @@ func BenchmarkHandleRedirect(b *testing.B) {
 
 // Benchmark для HandleShortenURLJSON с различными размерами данных
 func BenchmarkHandleShortenURLJSON(b *testing.B) {
+	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
 	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
@@ -142,6 +145,7 @@ func BenchmarkHandleShortenURLJSON(b *testing.B) {
 				req.Header.Set("Content-Type", "application/json")
 
 				rr := httptest.NewRecorder()
+				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.ShortenHandler.HandleShortenURLJSON(rr, req)
 
 				// Проверяем успешность запроса
@@ -162,6 +166,7 @@ func BenchmarkHandleShortenURLJSON(b *testing.B) {
 
 // Benchmark для HandleBatchShortenURL с различными размерами батчей
 func BenchmarkHandleBatchShortenURL(b *testing.B) {
+	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
 	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
@@ -204,6 +209,7 @@ func BenchmarkHandleBatchShortenURL(b *testing.B) {
 				req.Header.Set("Content-Type", "application/json")
 
 				rr := httptest.NewRecorder()
+				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.ShortenHandler.HandleBatchShortenURL(rr, req)
 
 				// Проверяем успешность запроса
@@ -281,6 +287,7 @@ func BenchmarkHandleDeleteURLs(b *testing.B) {
 				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 
 				rr := httptest.NewRecorder()
+				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.HandleDeleteURLs(rr, req)
 
 				// Проверяем успешность запроса
@@ -337,6 +344,7 @@ func BenchmarkHandleGetUserURLs(b *testing.B) {
 				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 
 				rr := httptest.NewRecorder()
+				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.HandleGetUserURLs(rr, req)
 
 				// Проверяем успешность запроса
@@ -388,12 +396,13 @@ func BenchmarkHandlePing(b *testing.B) {
 
 // Benchmark для всего пайплайна: создание -> получение -> удаление
 func BenchmarkFullPipeline(b *testing.B) {
+	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
 	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	urlHandler := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
 
-	userID := "pipeline-user"
+	userID = "pipeline-user"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -441,6 +450,7 @@ func BenchmarkFullPipeline(b *testing.B) {
 
 // Benchmark параллельных запросов
 func BenchmarkConcurrentShortenURL(b *testing.B) {
+	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
 	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
@@ -457,7 +467,8 @@ func BenchmarkConcurrentShortenURL(b *testing.B) {
 			req.Header.Set("Content-Type", "text/plain")
 
 			rr := httptest.NewRecorder()
-			h.ShortenHandler.HandleShortenURL(rr, req)
+			req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+				h.ShortenHandler.HandleShortenURL(rr, req)
 
 			if rr.Code != http.StatusCreated && rr.Code != http.StatusConflict {
 				b.Fatalf("Expected status 201 or 409, got %d", rr.Code)
