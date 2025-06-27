@@ -1,22 +1,41 @@
+// Package file реализует файловое хранилище для сокращённых URL.
 package file
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/sirupsen/logrus"
 )
 
+// FileStorage представляет хранилище URL-адресов в файловой системе.
+// Данные сохраняются в JSON-формате в указанном файле и поддерживаются
+// в памяти для быстрого доступа. Поддерживает конкурентный доступ через
+// механизмы синхронизации.
 type FileStorage struct {
-	filePath string
-	urls     map[string]models.UserURL
-	mu       sync.RWMutex
+	filePath  string
+	urls      map[string]models.UserURL
+	mu        sync.RWMutex
+	isDirty   bool
+	flushLock sync.Mutex
 }
 
+// NewFileStorage создаёт и инициализирует новое файловое хранилище URL-адресов.
+// Если указанный файл существует, данные загружаются из него.
+// Если файл не существует, создаётся пустое хранилище.
+//
+// Параметры:
+//   - filePath: путь к файлу для хранения данных
+//
+// Возвращает:
+//   - указатель на FileStorage при успешной инициализации
+//   - ошибку, если не удалось открыть или десериализовать файл
 func NewFileStorage(filePath string) (*FileStorage, error) {
 	fs := &FileStorage{
 		filePath: filePath,
@@ -24,19 +43,22 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 	}
 
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		logrus.Info("File does not exist, starting with empty storage")
 		return fs, nil
 	}
 
-	data, err := os.ReadFile(filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to read file")
 		return nil, err
 	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Error("Failed to close file")
+		}
+	}()
 
+	decoder := json.NewDecoder(file)
 	var entries []models.UserURL
-	if err := json.Unmarshal(data, &entries); err != nil {
-		logrus.WithError(err).Error("Failed to unmarshal JSON from file")
+	if err := decoder.Decode(&entries); err != nil {
 		return nil, err
 	}
 
@@ -44,24 +66,27 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 		fs.urls[entry.ShortURL] = entry
 	}
 
-	logrus.Info("File storage initialized successfully")
 	return fs, nil
 }
 
+// Save сохраняет новый URL-адрес в хранилище.
+// Сохранение в файл происходит асинхронно.
 func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
-
 	fs.urls[shortID] = models.UserURL{
 		ShortURL:    shortID,
 		OriginalURL: originalURL,
 		UserID:      userID,
 		IsDeleted:   false,
 	}
+	fs.isDirty = true
+	fs.mu.Unlock()
 
-	return fs.saveToFile()
+	go fs.scheduleSave()
+	return nil
 }
 
+// FindByOriginalURL ищет сокращенный идентификатор по оригинальному URL-адресу.
 func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -74,10 +99,9 @@ func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string
 	return "", nil
 }
 
+// SaveBatch сохраняет пакет URL-адресов в хранилище.
 func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
-
 	for shortID, originalURL := range items {
 		fs.urls[shortID] = models.UserURL{
 			ShortURL:    shortID,
@@ -86,10 +110,14 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, u
 			IsDeleted:   false,
 		}
 	}
+	fs.isDirty = true
+	fs.mu.Unlock()
 
-	return fs.saveToFile()
+	go fs.scheduleSave()
+	return nil
 }
 
+// Get возвращает оригинальный URL-адрес по сокращенному идентификатору.
 func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -101,11 +129,12 @@ func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	return url.OriginalURL, true
 }
 
+// GetURLsByUserID возвращает все неудаленные URL-адреса, созданные указанным пользователем.
 func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
-	var result []models.UserURL
+	result := make([]models.UserURL, 0, 10)
 	for _, url := range fs.urls {
 		if url.UserID == userID && !url.IsDeleted {
 			result = append(result, url)
@@ -114,38 +143,113 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 	return result, nil
 }
 
+// DeleteURLs помечает указанные URL-адреса как удаленные.
 func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	fs.mu.Lock()
-    defer fs.mu.Unlock()
+	for _, shortID := range shortIDs {
+		if url, exists := fs.urls[shortID]; exists && url.UserID == userID {
+			url.IsDeleted = true
+			fs.urls[shortID] = url
+		}
+	}
+	fs.isDirty = true
+	fs.mu.Unlock()
 
-    for _, shortID := range shortIDs {
-        if url, exists := fs.urls[shortID]; exists && url.UserID == userID {
-            url.IsDeleted = true
-            fs.urls[shortID] = url
-        }
-    }
-    return fs.saveToFile()
+	go fs.scheduleSave()
+	return nil
 }
 
+// Ping проверяет доступность хранилища.
 func (fs *FileStorage) Ping(ctx context.Context) error {
 	return errors.New("file storage does not support database connection check")
 }
 
+// Close завершает работу файлового хранилища и сохраняет все данные в файл.
+func (fs *FileStorage) Close() error {
+	fs.flushLock.Lock()
+	defer fs.flushLock.Unlock()
+
+	fs.mu.RLock()
+	dirty := fs.isDirty
+	fs.mu.RUnlock()
+
+	if dirty {
+		return fs.saveToFile()
+	}
+	return nil
+}
+
+// scheduleSave планирует сохранение данных в файл, если данные изменены.
+func (fs *FileStorage) scheduleSave() {
+	fs.flushLock.Lock()
+	defer fs.flushLock.Unlock()
+
+	fs.mu.RLock()
+	dirty := fs.isDirty
+	fs.mu.RUnlock()
+
+	if !dirty {
+		return
+	}
+
+	if err := fs.saveToFile(); err != nil {
+		logrus.WithError(err).Error("Failed to save file storage")
+	}
+}
+
+// saveToFile сохраняет текущее состояние хранилища в JSON-файл.
+// Использует временный файл и безопасную замену основного.
+// Убеждается, что директория для файла существует.
 func (fs *FileStorage) saveToFile() error {
-	var entries []models.UserURL
+	tmpFile := fs.filePath + ".tmp"
+
+	// Создаём директорию, если она не существует
+	if err := os.MkdirAll(filepath.Dir(tmpFile), 0755); err != nil {
+		return err
+	}
+
+	file, err := os.Create(tmpFile)
+	if err != nil {
+		return err
+	}
+
+	writer := bufio.NewWriter(file)
+
+	fs.mu.RLock()
+	entries := make([]models.UserURL, 0, len(fs.urls))
 	for _, url := range fs.urls {
 		entries = append(entries, url)
 	}
+	fs.mu.RUnlock()
 
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		logrus.WithError(err).Error("Failed to marshal URLs to JSON")
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(entries); err != nil {
+		_ = file.Close()
+		_ = os.Remove(tmpFile)
 		return err
 	}
 
-	if err := os.WriteFile(fs.filePath, data, 0644); err != nil {
-		logrus.WithError(err).Error("Failed to write URLs to file")
+	if err := writer.Flush(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(tmpFile)
 		return err
 	}
+
+	if err := file.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpFile, fs.filePath); err != nil {
+		if removeErr := os.Remove(tmpFile); removeErr != nil && !os.IsNotExist(removeErr) {
+			logrus.WithError(removeErr).Error("Failed to remove temp file after rename error")
+		}
+		return err
+	}
+
+	fs.mu.Lock()
+	fs.isDirty = false
+	fs.mu.Unlock()
+
 	return nil
 }

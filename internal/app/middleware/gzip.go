@@ -1,3 +1,4 @@
+// Package middleware содержит HTTP middleware, включая поддержку gzip-сжатия.
 package middleware
 
 import (
@@ -9,33 +10,70 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// gzipReader реализует интерфейс io.ReadCloser для обработки gzip-сжатых данных.
+// Предоставляет функциональность для чтения и корректного закрытия сжатых потоков данных.
 type gzipReader struct {
-	r  io.ReadCloser
-	gz *gzip.Reader
+	r  io.ReadCloser // Исходный поток данных
+	gz *gzip.Reader  // Gzip-декомпрессор
 }
 
+// Read читает и распаковывает данные из gzip-сжатого потока.
+// Реализует метод Read интерфейса io.Reader.
+//
+// Параметры:
+//   - p []byte: буфер для чтения данных
+//
+// Возвращает:
+//   - n int: количество прочитанных байт
+//   - err error: ошибка чтения или io.EOF при достижении конца потока
 func (g *gzipReader) Read(p []byte) (n int, err error) {
 	return g.gz.Read(p)
 }
 
+// Close закрывает gzip-декомпрессор и исходный поток данных.
+// Реализует метод Close интерфейса io.Closer.
+//
+// Возвращает:
+//   - error: ошибка закрытия потоков данных
 func (g *gzipReader) Close() error {
-	if err := g.gz.Close(); err != nil {
-		g.r.Close()
-		return err
+	gzErr := g.gz.Close()
+	rErr := g.r.Close()
+
+	// Возвращаем первую ошибку, если она есть
+	if gzErr != nil {
+		return gzErr
 	}
-	return g.r.Close()
+	return rErr
 }
 
+// gzipWriter оборачивает http.ResponseWriter для автоматического сжатия ответов.
 type gzipWriter struct {
-	http.ResponseWriter
-	w *gzip.Writer
+	http.ResponseWriter              // Встроенный ResponseWriter
+	w                   *gzip.Writer // Gzip-компрессор
 }
 
+// Write сжимает данные с помощью gzip и записывает их в ответ.
+// Реализует метод Write интерфейса io.Writer.
+//
+// Параметры:
+//   - p []byte: данные для записи
+//
+// Возвращает:
+//   - int: количество записанных байт
+//   - error: ошибка записи
 func (g *gzipWriter) Write(p []byte) (int, error) {
 	return g.w.Write(p)
 }
 
-
+// GzipMiddleware создает middleware для автоматической обработки gzip-сжатия в HTTP-запросах и ответах.
+// Обрабатывает запросы со сжатыми данными (Content-Encoding: gzip) и
+// сжимает ответы для клиентов, поддерживающих gzip (Accept-Encoding: gzip).
+//
+// Параметры:
+//   - next http.Handler: следующий обработчик в цепочке middleware
+//
+// Возвращает:
+//   - http.Handler: обработчик с поддержкой gzip-сжатия
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		acceptsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
@@ -45,30 +83,30 @@ func GzipMiddleware(next http.Handler) http.Handler {
 
 		if sendsGzip {
 			body := r.Body
-			
+
 			gz, err := gzip.NewReader(body)
 			if err != nil {
 				logrus.WithError(err).Error("Failed to create gzip reader")
 				http.Error(w, "Invalid gzip data", http.StatusBadRequest)
 				return
 			}
-			
+
 			r.Body = &gzipReader{
 				r:  body,
 				gz: gz,
 			}
-			
+
 			if r.Header.Get("Content-Type") == "application/x-gzip" {
 				r.Header.Set("Content-Type", "text/plain")
 			}
-			
+
 			r.Header.Del("Content-Encoding")
 		}
 
 		contentType := w.Header().Get("Content-Type")
-		shouldCompress := acceptsGzip && (contentType == "" || 
-			strings.Contains(contentType, "application/json") || 
-			strings.Contains(contentType, "text/html") || 
+		shouldCompress := acceptsGzip && (contentType == "" ||
+			strings.Contains(contentType, "application/json") ||
+			strings.Contains(contentType, "text/html") ||
 			strings.Contains(contentType, "text/plain"))
 
 		if shouldCompress {
@@ -78,7 +116,11 @@ func GzipMiddleware(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			defer gz.Close()
+			defer func() {
+				if closeErr := gz.Close(); closeErr != nil {
+					logrus.WithError(closeErr).Error("Failed to close gzip writer")
+				}
+			}()
 
 			w.Header().Set("Content-Encoding", "gzip")
 			w.Header().Add("Vary", "Accept-Encoding")
