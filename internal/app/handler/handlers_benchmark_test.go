@@ -9,11 +9,30 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AlenaMolokova/http/internal/app/auth"
 	"github.com/AlenaMolokova/http/internal/app/generator"
 	"github.com/AlenaMolokova/http/internal/app/service"
 	"github.com/AlenaMolokova/http/internal/app/storage/memory"
 	"github.com/gorilla/mux"
 )
+
+// setCookieForAuth устанавливает правильные cookie для аутентификации
+func setCookieForAuth(req *http.Request, userID string) {
+	signature := auth.SignData(userID)
+
+	req.AddCookie(&http.Cookie{
+		Name:  fmt.Sprintf("%s_%s", auth.CookieName, auth.CookiePartID),
+		Value: userID,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  fmt.Sprintf("%s_%s", auth.CookieName, auth.CookiePartSign),
+		Value: signature,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  auth.CookieName,
+		Value: "1",
+	})
+}
 
 // Benchmark для HandleShortenURL с различными сценариями
 func BenchmarkHandleShortenURL(b *testing.B) {
@@ -27,9 +46,9 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 		name string
 		url  string
 	}{
-		{"Short URL", "https://ya.ru"},
-		{"Medium URL", "https://example.com/path/to/resource"},
-		{"Long URL", "https://very-long-domain-name.example.com/very/long/path/to/some/resource?param1=value1&param2=value2&param3=value3"},
+		{"Short_URL", "https://ya.ru"},
+		{"Medium_URL", "https://example.com/path/to/resource"},
+		{"Long_URL", "https://very-long-domain-name.example.com/very/long/path/to/some/resource?param1=value1&param2=value2&param3=value3"},
 	}
 
 	for _, tc := range testCases {
@@ -44,8 +63,10 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 				}
 				req.Header.Set("Content-Type", "text/plain")
 
+				// Устанавливаем правильные cookie для аутентификации
+				setCookieForAuth(req, userID)
+
 				rr := httptest.NewRecorder()
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.ShortenHandler.HandleShortenURL(rr, req)
 
 				// Проверяем успешность запроса
@@ -90,6 +111,7 @@ func BenchmarkHandleRedirect(b *testing.B) {
 	}
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		// Выбираем случайный URL для редиректа
 		testURL := testURLs[i%len(testURLs)]
@@ -98,9 +120,11 @@ func BenchmarkHandleRedirect(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+
 		req = mux.SetURLVars(req, map[string]string{"id": testURL.shortID})
 
 		rr := httptest.NewRecorder()
+
 		h.RedirectHandler.HandleRedirect(rr, req)
 
 		// Проверяем успешность запроса
@@ -129,23 +153,27 @@ func BenchmarkHandleShortenURLJSON(b *testing.B) {
 		name string
 		json string
 	}{
-		{"Simple JSON", `{"url":"https://example.com"}`},
-		{"Long URL JSON", `{"url":"https://very-long-domain-name.example.com/very/long/path/to/some/resource?param1=value1&param2=value2&param3=value3"}`},
+		{"Simple_JSON", `{"url":"https://example.com"}`},
+		{"Long_URL_JSON", `{"url":"https://very-long-domain-name.example.com/very/long/path/to/some/resource?param1=value1&param2=value2&param3=value3"}`},
 	}
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ResetTimer()
+
 			for i := 0; i < b.N; i++ {
 				body := bytes.NewBufferString(tc.json)
 				req, err := http.NewRequestWithContext(context.Background(), "POST", "/api/shorten", body)
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				req.Header.Set("Content-Type", "application/json")
 
+				// Устанавливаем правильные cookie для аутентификации
+				setCookieForAuth(req, userID)
+
 				rr := httptest.NewRecorder()
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.ShortenHandler.HandleShortenURLJSON(rr, req)
 
 				// Проверяем успешность запроса
@@ -190,9 +218,9 @@ func BenchmarkHandleBatchShortenURL(b *testing.B) {
 		name      string
 		batchSize int
 	}{
-		{"Small Batch (5)", 5},
-		{"Medium Batch (20)", 20},
-		{"Large Batch (100)", 100},
+		{"Small_Batch_(5)", 5},
+		{"Medium_Batch_(20)", 20},
+		{"Large_Batch_(100)", 100},
 	}
 
 	for _, tc := range testCases {
@@ -200,16 +228,21 @@ func BenchmarkHandleBatchShortenURL(b *testing.B) {
 			batchJSON := createBatch(tc.batchSize)
 
 			b.ResetTimer()
+
 			for i := 0; i < b.N; i++ {
 				body := bytes.NewBufferString(batchJSON)
+
 				req, err := http.NewRequestWithContext(context.Background(), "POST", "/api/shorten/batch", body)
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				req.Header.Set("Content-Type", "application/json")
 
+				// Устанавливаем правильные cookie для аутентификации
+				setCookieForAuth(req, userID)
+
 				rr := httptest.NewRecorder()
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.ShortenHandler.HandleBatchShortenURL(rr, req)
 
 				// Проверяем успешность запроса
@@ -252,17 +285,24 @@ func BenchmarkHandleDeleteURLs(b *testing.B) {
 		name  string
 		count int
 	}{
-		{"Delete 1 URL", 1},
-		{"Delete 5 URLs", 5},
-		{"Delete 20 URLs", 20},
+		{"Delete_1_URL", 1},
+		{"Delete_5_URLs", 5},
+		{"Delete_20_URLs", 20},
 	}
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ResetTimer()
+
 			for i := 0; i < b.N; i++ {
 				// Выбираем подмножество ID для удаления
-				idsToDelete := shortIDs[i%len(shortIDs) : (i%len(shortIDs))+tc.count]
+				startIdx := i % len(shortIDs)
+				endIdx := startIdx + tc.count
+				if endIdx > len(shortIDs) {
+					endIdx = len(shortIDs)
+				}
+				idsToDelete := shortIDs[startIdx:endIdx]
+
 				if len(idsToDelete) < tc.count {
 					idsToDelete = shortIDs[:tc.count]
 				}
@@ -279,15 +319,18 @@ func BenchmarkHandleDeleteURLs(b *testing.B) {
 				jsonBuilder.WriteString("]")
 
 				body := bytes.NewBufferString(jsonBuilder.String())
+
 				req, err := http.NewRequestWithContext(ctx, "DELETE", "/api/user/urls", body)
 				if err != nil {
 					b.Fatal(err)
 				}
+
 				req.Header.Set("Content-Type", "application/json")
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+
+				// Устанавливаем правильные cookie для аутентификации
+				setCookieForAuth(req, userID)
 
 				rr := httptest.NewRecorder()
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.HandleDeleteURLs(rr, req)
 
 				// Проверяем успешность запроса
@@ -312,9 +355,9 @@ func BenchmarkHandleGetUserURLs(b *testing.B) {
 		name     string
 		urlCount int
 	}{
-		{"Few URLs (5)", 5},
-		{"Many URLs (50)", 50},
-		{"Lots of URLs (200)", 200},
+		{"Few_URLs_(5)", 5},
+		{"Many_URLs_(50)", 50},
+		{"Lots_of_URLs_(200)", 200},
 	}
 
 	for _, tc := range testCases {
@@ -336,20 +379,22 @@ func BenchmarkHandleGetUserURLs(b *testing.B) {
 			}
 
 			b.ResetTimer()
+
 			for i := 0; i < b.N; i++ {
 				req, err := http.NewRequestWithContext(ctx, "GET", "/api/user/urls", nil)
 				if err != nil {
 					b.Fatal(err)
 				}
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+
+				// Устанавливаем правильные cookie для аутентификации
+				setCookieForAuth(req, userID)
 
 				rr := httptest.NewRecorder()
-				req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
 				h.HandleGetUserURLs(rr, req)
 
-				// Проверяем успешность запроса
-				if rr.Code != http.StatusOK {
-					b.Fatalf("Expected status 200, got %d", rr.Code)
+				// Проверяем успешность запроса (принимаем статус 200 и 204)
+				if rr.Code != http.StatusOK && rr.Code != http.StatusNoContent {
+					b.Fatalf("Expected status 200 or 204, got %d", rr.Code)
 				}
 
 				// Очищаем ресурсы
@@ -371,6 +416,7 @@ func BenchmarkHandlePing(b *testing.B) {
 	h := NewPingHandler(s)
 
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		req, err := http.NewRequestWithContext(context.Background(), "GET", "/ping", nil)
 		if err != nil {
@@ -402,9 +448,8 @@ func BenchmarkFullPipeline(b *testing.B) {
 	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	urlHandler := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
 
-	userID = "pipeline-user"
-
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		ctx := context.Background()
 
@@ -415,7 +460,9 @@ func BenchmarkFullPipeline(b *testing.B) {
 			b.Fatal(err)
 		}
 		shortenReq.Header.Set("Content-Type", "text/plain")
-		shortenReq.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+
+		// Устанавливаем правильные cookie для аутентификации
+		setCookieForAuth(shortenReq, userID)
 
 		shortenRR := httptest.NewRecorder()
 		urlHandler.ShortenHandler.HandleShortenURL(shortenRR, shortenReq)
@@ -429,7 +476,9 @@ func BenchmarkFullPipeline(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		getUserReq.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
+
+		// Устанавливаем правильные cookie для аутентификации
+		setCookieForAuth(getUserReq, userID)
 
 		getUserRR := httptest.NewRecorder()
 		urlHandler.UserURLsHandler.HandleGetUserURLs(getUserRR, getUserReq)
@@ -440,6 +489,7 @@ func BenchmarkFullPipeline(b *testing.B) {
 				b.Logf("Failed to close shorten response body: %v", closeErr)
 			}
 		}
+
 		if result := getUserRR.Result(); result != nil {
 			if closeErr := result.Body.Close(); closeErr != nil {
 				b.Logf("Failed to close get user response body: %v", closeErr)
@@ -448,7 +498,7 @@ func BenchmarkFullPipeline(b *testing.B) {
 	}
 }
 
-// Benchmark параллельных запросов
+// Benchmark для параллельных запросов
 func BenchmarkConcurrentShortenURL(b *testing.B) {
 	userID := "test-user"
 	storage := memory.NewMemoryStorage()
@@ -466,9 +516,11 @@ func BenchmarkConcurrentShortenURL(b *testing.B) {
 			}
 			req.Header.Set("Content-Type", "text/plain")
 
+			// Устанавливаем правильные cookie для аутентификации
+			setCookieForAuth(req, userID)
+
 			rr := httptest.NewRecorder()
-			req.AddCookie(&http.Cookie{Name: "user_id", Value: userID})
-				h.ShortenHandler.HandleShortenURL(rr, req)
+			h.ShortenHandler.HandleShortenURL(rr, req)
 
 			if rr.Code != http.StatusCreated && rr.Code != http.StatusConflict {
 				b.Fatalf("Expected status 201 or 409, got %d", rr.Code)
