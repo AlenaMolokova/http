@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
@@ -70,15 +71,6 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 
 // Save сохраняет новый URL-адрес в хранилище.
 // Сохранение в файл происходит асинхронно.
-//
-// Параметры:
-//   - ctx: контекст выполнения операции
-//   - shortID: сокращенный идентификатор URL
-//   - originalURL: оригинальный URL-адрес
-//   - userID: идентификатор пользователя, который создал сокращение
-//
-// Возвращает:
-//   - ошибку, если не удалось сохранить URL (в текущей реализации всегда nil)
 func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	fs.mu.Lock()
 	fs.urls[shortID] = models.UserURL{
@@ -187,6 +179,7 @@ func (fs *FileStorage) Close() error {
 	return nil
 }
 
+// scheduleSave планирует сохранение данных в файл, если данные изменены.
 func (fs *FileStorage) scheduleSave() {
 	fs.flushLock.Lock()
 	defer fs.flushLock.Unlock()
@@ -206,8 +199,15 @@ func (fs *FileStorage) scheduleSave() {
 
 // saveToFile сохраняет текущее состояние хранилища в JSON-файл.
 // Использует временный файл и безопасную замену основного.
+// Убеждается, что директория для файла существует.
 func (fs *FileStorage) saveToFile() error {
 	tmpFile := fs.filePath + ".tmp"
+
+	// Создаём директорию, если она не существует
+	if err := os.MkdirAll(filepath.Dir(tmpFile), 0755); err != nil {
+		return err
+	}
+
 	file, err := os.Create(tmpFile)
 	if err != nil {
 		return err
