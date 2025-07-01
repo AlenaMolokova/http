@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -51,17 +50,19 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 
 	file, err := os.Open(filePath)
 	if err != nil {
+		logrus.WithError(err).Errorf("Failed to open file %s", filePath)
 		return nil, err
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
-			logrus.WithError(closeErr).Error("Failed to close file")
+			logrus.WithError(closeErr).Errorf("Failed to close file %s", filePath)
 		}
 	}()
 
 	decoder := json.NewDecoder(file)
 	var entries []models.UserURL
 	if err := decoder.Decode(&entries); err != nil {
+		logrus.WithError(err).Errorf("Failed to decode JSON from %s", filePath)
 		return nil, err
 	}
 
@@ -73,16 +74,16 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 }
 
 // Save сохраняет новый URL-адрес в хранилище.
-// Сохранение в файл происходит асинхронно.
+// Сохранение в файл происходит синхронно в тестах (если TEST_ENV=true) или асинхронно.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - shortID: сокращенный идентификатор URL
+//   - shortID: сокращённый идентификатор URL
 //   - originalURL: оригинальный URL-адрес
 //   - userID: идентификатор пользователя, который создал сокращение
 //
 // Возвращает:
-//   - ошибку, если не удалось сохранить URL (в текущей реализации всегда nil)
+//   - ошибку, если не удалось сохранить URL (в тестах может возвращать ошибку сохранения в файл)
 func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	fs.mu.Lock()
 	fs.urls[shortID] = models.UserURL{
@@ -94,18 +95,21 @@ func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID st
 	fs.isDirty = true
 	fs.mu.Unlock()
 
+	if os.Getenv("TEST_ENV") == "true" {
+		return fs.scheduleSave()
+	}
 	go fs.scheduleSave()
 	return nil
 }
 
-// FindByOriginalURL ищет сокращенный идентификатор по оригинальному URL-адресу.
+// FindByOriginalURL ищет сокращённый идентификатор по оригинальному URL-адресу.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
 //   - originalURL: оригинальный URL-адрес для поиска
 //
 // Возвращает:
-//   - сокращенный идентификатор, если URL найден
+//   - сокращённый идентификатор, если URL найден
 //   - пустую строку, если URL не найден
 //   - ошибку (в текущей реализации всегда nil)
 func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
@@ -121,15 +125,15 @@ func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string
 }
 
 // SaveBatch сохраняет пакет URL-адресов в хранилище.
-// Сохранение в файл происходит асинхронно.
+// Сохранение в файл происходит синхронно в тестах (если TEST_ENV=true) или асинхронно.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - items: карта, где ключ - сокращенный идентификатор, значение - оригинальный URL
+//   - items: карта, где ключ — сокращённый идентификатор, значение — оригинальный URL
 //   - userID: идентификатор пользователя, которому принадлежат URL-адреса
 //
 // Возвращает:
-//   - ошибку, если не удалось сохранить пакет URL-адресов (в текущей реализации всегда nil)
+//   - ошибку, если не удалось сохранить пакет URL-адресов (в тестах может возвращать ошибку сохранения в файл)
 func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
 	for shortID, originalURL := range items {
@@ -143,15 +147,18 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, u
 	fs.isDirty = true
 	fs.mu.Unlock()
 
+	if os.Getenv("TEST_ENV") == "true" {
+		return fs.scheduleSave()
+	}
 	go fs.scheduleSave()
 	return nil
 }
 
-// Get возвращает оригинальный URL-адрес по сокращенному идентификатору.
+// Get возвращает оригинальный URL-адрес по сокращённому идентификатору.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - shortID: сокращенный идентификатор URL
+//   - shortID: сокращённый идентификатор URL
 //
 // Возвращает:
 //   - оригинальный URL-адрес и true, если сокращение найдено и не удалено
@@ -167,14 +174,14 @@ func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	return url.OriginalURL, true
 }
 
-// GetURLsByUserID возвращает все неудаленные URL-адреса, созданные указанным пользователем.
+// GetURLsByUserID возвращает все неудалённые URL-адреса, созданные указанным пользователем.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
 //   - userID: идентификатор пользователя
 //
 // Возвращает:
-//   - список структур UserURL, содержащих сокращенные и оригинальные URL-адреса
+//   - список структур UserURL, содержащих сокращённые и оригинальные URL-адреса
 //   - ошибку (в текущей реализации всегда nil)
 func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	fs.mu.RLock()
@@ -189,16 +196,16 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 	return result, nil
 }
 
-// DeleteURLs помечает указанные URL-адреса как удаленные.
-// Фактическое удаление из файла происходит асинхронно.
+// DeleteURLs помечает указанные URL-адреса как удалённые.
+// Сохранение в файл происходит синхронно в тестах (если TEST_ENV=true) или асинхронно.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - shortIDs: список сокращенных идентификаторов для удаления
+//   - shortIDs: список сокращённых идентификаторов для удаления
 //   - userID: идентификатор пользователя, которому принадлежат URL-адреса
 //
 // Возвращает:
-//   - ошибку, если не удалось пометить URL-адреса как удаленные (в текущей реализации всегда nil)
+//   - ошибку, если не удалось пометить URL-адреса как удалённые (в тестах может возвращать ошибку сохранения в файл)
 func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	fs.mu.Lock()
 	for _, shortID := range shortIDs {
@@ -210,11 +217,14 @@ func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID
 	fs.isDirty = true
 	fs.mu.Unlock()
 
+	if os.Getenv("TEST_ENV") == "true" {
+		return fs.scheduleSave()
+	}
 	go fs.scheduleSave()
 	return nil
 }
 
-// GetStats возвращает статистику сервиса: количество сокращенных URL и пользователей.
+// GetStats возвращает статистику сервиса: количество сокращённых URL и пользователей.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
@@ -256,6 +266,9 @@ func (fs *FileStorage) Ping(ctx context.Context) error {
 }
 
 // Close завершает работу файлового хранилища и сохраняет все данные в файл.
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить данные в файл
 func (fs *FileStorage) Close() error {
 	fs.flushLock.Lock()
 	defer fs.flushLock.Unlock()
@@ -271,7 +284,10 @@ func (fs *FileStorage) Close() error {
 }
 
 // scheduleSave планирует сохранение данных в файл, если данные изменены.
-func (fs *FileStorage) scheduleSave() {
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить данные в файл
+func (fs *FileStorage) scheduleSave() error {
 	fs.flushLock.Lock()
 	defer fs.flushLock.Unlock()
 
@@ -280,31 +296,43 @@ func (fs *FileStorage) scheduleSave() {
 	fs.mu.RUnlock()
 
 	if !dirty {
-		return
+		return nil
 	}
 
 	if err := fs.saveToFile(); err != nil {
 		logrus.WithError(err).Error("Failed to save file storage")
+		return err
 	}
+	return nil
 }
 
 // saveToFile сохраняет текущее состояние хранилища в JSON-файл.
 // Использует временный файл и безопасную замену основного.
 // Убеждается, что директория для файла существует.
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить данные в файл
 func (fs *FileStorage) saveToFile() error {
 	tmpFile := fs.filePath + ".tmp"
 
 	// Создаём директорию, если она не существует
+	logrus.Infof("Creating directory for temp file: %s", filepath.Dir(tmpFile))
 	if err := os.MkdirAll(filepath.Dir(tmpFile), 0755); err != nil {
 		logrus.WithError(err).Errorf("Failed to create directory for %s", tmpFile)
 		return err
 	}
 
+	logrus.Infof("Creating temp file: %s", tmpFile)
 	file, err := os.Create(tmpFile)
 	if err != nil {
 		logrus.WithError(err).Errorf("Failed to create temp file %s", tmpFile)
 		return err
 	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && !errors.Is(closeErr, os.ErrClosed) {
+			logrus.WithError(closeErr).Errorf("Failed to close temp file %s", tmpFile)
+		}
+	}()
 
 	writer := bufio.NewWriter(file)
 
@@ -315,39 +343,41 @@ func (fs *FileStorage) saveToFile() error {
 	}
 	fs.mu.RUnlock()
 
+	logrus.Info("Encoding JSON to temp file")
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(entries); err != nil {
-		_ = file.Close()
-		_ = os.Remove(tmpFile)
 		logrus.WithError(err).Error("Failed to encode JSON")
-		return err
-	}
-
-	if err := writer.Flush(); err != nil {
-		_ = file.Close()
-		_ = os.Remove(tmpFile)
-		logrus.WithError(err).Error("Failed to flush writer")
-		return err
-	}
-
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmpFile)
-		logrus.WithError(err).Error("Failed to close file")
-		return err
-	}
-
-	// Проверяем существование временного файла перед переименованием
-	if _, err := os.Stat(tmpFile); os.IsNotExist(err) {
-		logrus.Errorf("Temporary file %s does not exist", tmpFile)
-		return fmt.Errorf("temporary file %s does not exist", tmpFile)
-	}
-
-	if err := os.Rename(tmpFile, fs.filePath); err != nil {
 		if removeErr := os.Remove(tmpFile); removeErr != nil && !os.IsNotExist(removeErr) {
-			logrus.WithError(removeErr).Error("Failed to remove temp file after rename error")
+			logrus.WithError(removeErr).Errorf("Failed to remove temp file %s after encode error", tmpFile)
 		}
+		return err
+	}
+
+	logrus.Info("Flushing writer")
+	if err := writer.Flush(); err != nil {
+		logrus.WithError(err).Error("Failed to flush writer")
+		if removeErr := os.Remove(tmpFile); removeErr != nil && !os.IsNotExist(removeErr) {
+			logrus.WithError(removeErr).Errorf("Failed to remove temp file %s after flush error", tmpFile)
+		}
+		return err
+	}
+
+	logrus.Info("Closing temp file")
+	if err := file.Close(); err != nil {
+		logrus.WithError(err).Error("Failed to close file")
+		if removeErr := os.Remove(tmpFile); removeErr != nil && !os.IsNotExist(removeErr) {
+			logrus.WithError(removeErr).Errorf("Failed to remove temp file %s after close error", tmpFile)
+		}
+		return err
+	}
+
+	logrus.Infof("Renaming %s to %s", tmpFile, fs.filePath)
+	if err := os.Rename(tmpFile, fs.filePath); err != nil {
 		logrus.WithError(err).Errorf("Failed to rename %s to %s", tmpFile, fs.filePath)
+		if removeErr := os.Remove(tmpFile); removeErr != nil && !os.IsNotExist(removeErr) {
+			logrus.WithError(removeErr).Errorf("Failed to remove temp file %s after rename error", tmpFile)
+		}
 		return err
 	}
 
@@ -355,5 +385,6 @@ func (fs *FileStorage) saveToFile() error {
 	fs.isDirty = false
 	fs.mu.Unlock()
 
+	logrus.Info("Successfully saved to file")
 	return nil
 }
