@@ -1,3 +1,6 @@
+// Package router предоставляет маршрутизатор для обработки HTTP-запросов в приложении сокращения URL.
+// Он настраивает маршруты для операций сокращения, перенаправления, управления пользовательскими URL
+// и получения статистики сервиса, используя библиотеку Gorilla Mux.
 package router
 
 import (
@@ -12,16 +15,20 @@ type Router struct {
 	*mux.Router
 }
 
-// NewRouter создает новый экземпляр роутера с инициализированными обработчиками.
+// NewRouter создаёт и инициализирует новый маршрутизатор для обработки HTTP-запросов.
+//
 // Параметры:
-// - shortener: сервис сокращения URL
-// - batch: сервис пакетной обработки
-// - getter: сервис получения URL
-// - fetcher: сервис получения пользовательских URL
-// - deleter: сервис удаления URL
-// - pinger: сервис проверки здоровья
-// - statsProvider: сервис получения статистики
-// - baseURL: базовый адрес сервиса
+//   - shortener: интерфейс для сокращения URL
+//   - batch: интерфейс для пакетного сокращения URL
+//   - getter: интерфейс для получения URL
+//   - fetcher: интерфейс для получения URL пользователя
+//   - deleter: интерфейс для удаления URL
+//   - pinger: интерфейс для проверки доступности сервиса
+//   - statsProvider: интерфейс для получения статистики
+//   - baseURL: базовый URL для формирования сокращённых ссылок
+//
+// Возвращает:
+//   - указатель на Router, готовый к обработке запросов
 func NewRouter(
 	shortener models.URLShortener,
 	batch models.BatchURLShortener,
@@ -52,7 +59,11 @@ func NewRouter(
 	return &Router{Router: r}
 }
 
-// setupRoutes настраивает все маршруты приложения
+// setupRoutes настраивает все маршруты приложения.
+//
+// Параметры:
+//   - r: маршрутизатор Gorilla Mux для настройки маршрутов
+//   - h: обработчик URL для привязки к маршрутам
 func setupRoutes(r *mux.Router, h *handler.URLHandler) {
 	// Проверка здоровья сервиса
 	r.HandleFunc("/ping", h.PingHandler.HandlePing).Methods("GET")
@@ -73,8 +84,20 @@ func setupRoutes(r *mux.Router, h *handler.URLHandler) {
 	r.HandleFunc("/api/internal/stats", h.StatsHandler.HandleStats).Methods("GET")
 }
 
-// NewRouterLegacy создает роутер
-
+// NewRouterLegacy создаёт устаревший маршрутизатор для обратной совместимости.
+//
+// Использует отдельные обработчики для каждого типа запросов вместо единого URLHandler.
+// Параметры:
+//   - shortener: интерфейс для сокращения URL
+//   - batch: интерфейс для пакетного сокращения URL
+//   - getter: интерфейс для получения URL
+//   - fetcher: интерфейс для получения URL пользователя
+//   - deleter: интерфейс для удаления URL
+//   - pinger: интерфейс для проверки доступности сервиса
+//   - baseURL: базовый URL для формирования сокращённых ссылок
+//
+// Возвращает:
+//   - указатель на Router, готовый к обработке запросов
 func NewRouterLegacy(
 	shortener models.URLShortener,
 	batch models.BatchURLShortener,
