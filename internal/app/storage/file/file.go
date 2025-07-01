@@ -1,4 +1,6 @@
-// Package file реализует файловое хранилище для сокращённых URL.
+// Package file предоставляет реализацию хранилища сокращённых URL в файловой системе.
+// Хранилище использует JSON-файл для персистентного хранения данных и поддерживает
+// конкурентный доступ через механизмы синхронизации.
 package file
 
 import (
@@ -70,7 +72,17 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 }
 
 // Save сохраняет новый URL-адрес в хранилище.
+// Добавляет запись в память и помечает хранилище как измененное для последующей записи в файл.
 // Сохранение в файл происходит асинхронно.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - shortID: короткий идентификатор URL
+//   - originalURL: оригинальный URL
+//   - userID: идентификатор пользователя, связанного с URL
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить URL (в текущей реализации всегда nil)
 func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID string) error {
 	fs.mu.Lock()
 	fs.urls[shortID] = models.UserURL{
@@ -87,6 +99,16 @@ func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID st
 }
 
 // FindByOriginalURL ищет сокращенный идентификатор по оригинальному URL-адресу.
+// Проверяет все записи в хранилище и возвращает первый неудаленный короткий идентификатор,
+// соответствующий указанному оригинальному URL.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - originalURL: оригинальный URL для поиска
+//
+// Возвращает:
+//   - короткий идентификатор, если URL найден
+//   - пустую строку и nil, если URL не найден
 func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -100,6 +122,16 @@ func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string
 }
 
 // SaveBatch сохраняет пакет URL-адресов в хранилище.
+// Добавляет все переданные URL в память и помечает хранилище как измененное.
+// Сохранение в файл происходит асинхронно.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - items: словарь, где ключ - короткий идентификатор, значение - оригинальный URL
+//   - userID: идентификатор пользователя, связанного с URL
+//
+// Возвращает:
+//   - ошибку, если не удалось сохранить пакет (в текущей реализации всегда nil)
 func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
 	for shortID, originalURL := range items {
@@ -118,6 +150,15 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, u
 }
 
 // Get возвращает оригинальный URL-адрес по сокращенному идентификатору.
+// Проверяет наличие записи в хранилище и возвращает соответствующий URL, если он не помечен как удаленный.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - shortID: короткий идентификатор URL
+//
+// Возвращает:
+//   - оригинальный URL и true, если запись найдена и не удалена
+//   - пустую строку и false, если запись не найдена или помечена как удаленная
 func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -130,6 +171,15 @@ func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 }
 
 // GetURLsByUserID возвращает все неудаленные URL-адреса, созданные указанным пользователем.
+// Формирует список записей, соответствующих указанному идентификатору пользователя.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - слайс моделей UserURL, содержащий все неудаленные URL пользователя
+//   - ошибку (в текущей реализации всегда nil)
 func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -144,6 +194,16 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 }
 
 // DeleteURLs помечает указанные URL-адреса как удаленные.
+// Обновляет флаг IsDeleted для записей, соответствующих переданным коротким идентификаторам
+// и идентификатору пользователя. Помечает хранилище как измененное для асинхронной записи в файл.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - shortIDs: слайс коротких идентификаторов URL для удаления
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - ошибку, если не удалось выполнить удаление (в текущей реализации всегда nil)
 func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	fs.mu.Lock()
 	for _, shortID := range shortIDs {
@@ -167,7 +227,7 @@ func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID
 // Возвращает:
 //   - структуру Stats с информацией о количестве URL и пользователей
 //   - ошибку (в текущей реализации всегда nil)
-func (fs *FileStorage) GetStats(ctx context.Context) (*models.Stats, error) {
+func (fs *FileStorage) GetStats(ctx context.Context) (models.Stats, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
@@ -181,7 +241,7 @@ func (fs *FileStorage) GetStats(ctx context.Context) (*models.Stats, error) {
 		}
 	}
 
-	return &models.Stats{
+	return models.Stats{
 		URLs:  urlsCount,
 		Users: len(userIDs),
 	}, nil
