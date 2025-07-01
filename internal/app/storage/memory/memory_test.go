@@ -1,3 +1,4 @@
+// Package memory содержит тесты для хранилища URL в памяти.
 package memory
 
 import (
@@ -8,6 +9,11 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/models"
 )
 
+// TestNewMemoryStorage проверяет создание нового экземпляра MemoryStorage.
+//
+// Тест создаёт новое хранилище с помощью NewMemoryStorage и проверяет,
+// что возвращается непустой указатель на структуру MemoryStorage
+// и что карта urls инициализирована.
 func TestNewMemoryStorage(t *testing.T) {
 	storage := NewMemoryStorage()
 	if storage == nil {
@@ -18,6 +24,11 @@ func TestNewMemoryStorage(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_Save проверяет сохранение URL в хранилище.
+//
+// Тест сохраняет URL с указанным shortID, originalURL и userID,
+// проверяет отсутствие ошибок и корректность сохранённых данных,
+// включая поля ShortURL, OriginalURL, UserID и IsDeleted.
 func TestMemoryStorage_Save(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -45,6 +56,13 @@ func TestMemoryStorage_Save(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_FindByOriginalURL проверяет поиск сокращённого идентификатора по оригинальному URL.
+//
+// Тест сохраняет несколько URL, затем проверяет:
+// - нахождение shortID для существующего оригинального URL;
+// - возвращение пустого shortID для несуществующего URL;
+// - возвращение пустого shortID для удалённого URL.
+// Ожидается, что все операции выполняются без ошибок.
 func TestMemoryStorage_FindByOriginalURL(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -84,6 +102,11 @@ func TestMemoryStorage_FindByOriginalURL(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_SaveBatch проверяет пакетное сохранение URL в хранилище.
+//
+// Тест сохраняет несколько URL с помощью SaveBatch, проверяет отсутствие ошибок
+// и корректность сохранённых данных для каждого URL, включая поля ShortURL,
+// OriginalURL, UserID и IsDeleted.
 func TestMemoryStorage_SaveBatch(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -120,6 +143,12 @@ func TestMemoryStorage_SaveBatch(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_Get проверяет получение оригинального URL по сокращённому идентификатору.
+//
+// Тест сохраняет URL, затем проверяет:
+// - корректное получение существующего URL;
+// - возвращение exists=false и пустого URL для несуществующего shortID;
+// - возвращение exists=false и пустого URL для удалённого URL.
 func TestMemoryStorage_Get(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -158,6 +187,11 @@ func TestMemoryStorage_Get(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_GetURLsByUserID проверяет получение всех URL пользователя.
+//
+// Тест сохраняет URL для разных пользователей, включая удалённые,
+// и проверяет, что GetURLsByUserID возвращает только неудалённые URL
+// для указанного пользователя. Также проверяется отсутствие URL для несуществующего пользователя.
 func TestMemoryStorage_GetURLsByUserID(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -209,6 +243,12 @@ func TestMemoryStorage_GetURLsByUserID(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_DeleteURLs проверяет логическое удаление URL.
+//
+// Тест сохраняет URL для разных пользователей, затем проверяет:
+// - корректное удаление URL для указанного пользователя;
+// - игнорирование несуществующих shortID;
+// - невозможность удаления URL другого пользователя.
 func TestMemoryStorage_DeleteURLs(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -240,6 +280,10 @@ func TestMemoryStorage_DeleteURLs(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_Ping проверяет метод Ping для хранилища в памяти.
+//
+// Тест проверяет, что метод Ping возвращает ошибку, так как хранилище в памяти
+// не поддерживает проверку соединения.
 func TestMemoryStorage_Ping(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -250,6 +294,11 @@ func TestMemoryStorage_Ping(t *testing.T) {
 	}
 }
 
+// TestEmptyMemoryStorage проверяет поведение пустого хранилища.
+//
+// Тест проверяет, что методы Get, FindByOriginalURL и GetURLsByUserID
+// возвращают ожидаемые пустые результаты или exists=false для пустого хранилища
+// без ошибок.
 func TestEmptyMemoryStorage(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -276,6 +325,10 @@ func TestEmptyMemoryStorage(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_Overwrite проверяет перезапись существующего URL.
+//
+// Тест сохраняет URL, затем перезаписывает его с новым originalURL и userID,
+// проверяя, что данные обновляются корректно без ошибок.
 func TestMemoryStorage_Overwrite(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()
@@ -299,6 +352,11 @@ func TestMemoryStorage_Overwrite(t *testing.T) {
 	}
 }
 
+// TestMemoryStorage_GetURLsByUserIDStructure проверяет структуру возвращаемых данных методом GetURLsByUserID.
+//
+// Тест сохраняет URL и проверяет, что GetURLsByUserID возвращает
+// корректную структуру UserURL с ожидаемыми значениями полей ShortURL,
+// OriginalURL, UserID и IsDeleted.
 func TestMemoryStorage_GetURLsByUserIDStructure(t *testing.T) {
 	storage := NewMemoryStorage()
 	ctx := context.Background()

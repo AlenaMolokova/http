@@ -200,3 +200,88 @@ func (s *MemoryStorage) GetStats(ctx context.Context) (models.Stats, error) {
 		Users: len(userIDs),
 	}, nil
 }
+
+// ShortenURL создает сокращенную версию оригинального URL для указанного пользователя.
+// Реализует интерфейс URLShortener.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - originalURL: оригинальный URL для сокращения
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - структуру ShortenResult с сокращенным URL и флагом новизны
+//   - ошибку при неудачном выполнении операции
+func (s *MemoryStorage) ShortenURL(ctx context.Context, originalURL, userID string) (models.ShortenResult, error) {
+	// Проверяем, существует ли уже такой URL
+	if shortID, err := s.FindByOriginalURL(ctx, originalURL); err == nil && shortID != "" {
+		return models.ShortenResult{
+			ShortURL: shortID,
+			IsNew:    false,
+		}, nil
+	}
+
+	// Генерируем новый короткий идентификатор (простая заглушка)
+	shortID := generateShortID()
+
+	// Сохраняем новый URL
+	if err := s.Save(ctx, shortID, originalURL, userID); err != nil {
+		return models.ShortenResult{}, err
+	}
+
+	return models.ShortenResult{
+		ShortURL: shortID,
+		IsNew:    true,
+	}, nil
+}
+
+// ShortenBatch выполняет пакетное сокращение URL для заданного списка запросов и пользователя.
+// Реализует интерфейс BatchURLShortener.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//   - items: список запросов на сокращение URL
+//   - userID: идентификатор пользователя
+//
+// Возвращает:
+//   - список ответов с сокращенными URL
+//   - ошибку при неудачном выполнении операции
+func (s *MemoryStorage) ShortenBatch(ctx context.Context, items []models.BatchShortenRequest, userID string) ([]models.BatchShortenResponse, error) {
+	var responses []models.BatchShortenResponse
+	batchItems := make(map[string]string)
+
+	for _, item := range items {
+		// Проверяем, существует ли уже такой URL
+		if shortID, err := s.FindByOriginalURL(ctx, item.OriginalURL); err == nil && shortID != "" {
+			responses = append(responses, models.BatchShortenResponse{
+				CorrelationID: item.CorrelationID,
+				ShortURL:      shortID,
+			})
+		} else {
+			// Генерируем новый короткий идентификатор
+			shortID := generateShortID()
+			batchItems[shortID] = item.OriginalURL
+			responses = append(responses, models.BatchShortenResponse{
+				CorrelationID: item.CorrelationID,
+				ShortURL:      shortID,
+			})
+		}
+	}
+
+	// Сохраняем новые URL пачкой
+	if len(batchItems) > 0 {
+		if err := s.SaveBatch(ctx, batchItems, userID); err != nil {
+			return nil, err
+		}
+	}
+
+	return responses, nil
+}
+
+// generateShortID генерирует короткий идентификатор для URL.
+// Это упрощенная реализация для демонстрации.
+func generateShortID() string {
+	// В реальной реализации здесь должен быть более сложный алгоритм
+	// генерации уникальных коротких идентификаторов
+	return "short_id_placeholder"
+}
