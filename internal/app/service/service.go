@@ -24,16 +24,17 @@ type IDGenerator interface {
 // Он обрабатывает сокращение URL, получение оригинальных URL по сокращенным идентификаторам,
 // управление пакетными операциями с URL и кэширование данных пользователя.
 type Service struct {
-	saver     models.URLSaver
-	batch     models.URLBatchSaver
-	getter    models.URLGetter
-	fetcher   models.URLFetcher
-	deleter   models.URLDeleter
-	pinger    models.Pinger
-	generator IDGenerator // Используем интерфейс, объявленный в этом пакете
-	BaseURL   string
-	cache     map[string][]models.UserURL
-	cacheMu   sync.RWMutex
+	saver         models.URLSaver
+	batch         models.URLBatchSaver
+	getter        models.URLGetter
+	fetcher       models.URLFetcher
+	deleter       models.URLDeleter
+	pinger        models.Pinger
+	statsProvider models.StatsProvider
+	generator     IDGenerator // Используем интерфейс, объявленный в этом пакете
+	BaseURL       string
+	cache         map[string][]models.UserURL
+	cacheMu       sync.RWMutex
 }
 
 // NewService создает и инициализирует новый экземпляр сервиса с предоставленными зависимостями.
@@ -45,22 +46,24 @@ type Service struct {
 //   - fetcher: интерфейс для получения всех URL, связанных с конкретным пользователем
 //   - deleter: интерфейс для удаления URL
 //   - pinger: интерфейс для проверки соединения с хранилищем
+//   - statsProvider: интерфейс для получения статистики сервиса
 //   - generator: генератор коротких идентификаторов (может быть любая реализация IDGenerator)
 //   - baseURL: базовый URL сервиса, используемый для создания полных сокращенных URL
 //
 // Возвращает:
 //   - *Service: указатель на новый экземпляр сервиса
-func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, generator IDGenerator, baseURL string) *Service {
+func NewService(saver models.URLSaver, batch models.URLBatchSaver, getter models.URLGetter, fetcher models.URLFetcher, deleter models.URLDeleter, pinger models.Pinger, statsProvider models.StatsProvider, generator IDGenerator, baseURL string) *Service {
 	return &Service{
-		saver:     saver,
-		batch:     batch,
-		getter:    getter,
-		fetcher:   fetcher,
-		deleter:   deleter,
-		pinger:    pinger,
-		generator: generator,
-		BaseURL:   baseURL,
-		cache:     make(map[string][]models.UserURL),
+		saver:         saver,
+		batch:         batch,
+		getter:        getter,
+		fetcher:       fetcher,
+		deleter:       deleter,
+		pinger:        pinger,
+		statsProvider: statsProvider,
+		generator:     generator,
+		BaseURL:       baseURL,
+		cache:         make(map[string][]models.UserURL),
 	}
 }
 
@@ -222,4 +225,16 @@ func (s *Service) DeleteURLs(ctx context.Context, shortIDs []string, userID stri
 //   - error: ошибка, если проверка соединения не удалась
 func (s *Service) Ping(ctx context.Context) error {
 	return s.pinger.Ping(ctx)
+}
+
+// GetStats возвращает статистику сервиса (количество URL и пользователей).
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//
+// Возвращает:
+//   - models.Stats: статистика сервиса
+//   - error: ошибка, если операция не удалась
+func (s *Service) GetStats(ctx context.Context) (models.Stats, error) {
+	return s.statsProvider.GetStats(ctx)
 }

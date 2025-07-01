@@ -14,6 +14,7 @@ type URLHandler struct {
 	UserURLsHandler *UserURLsHandler // Обработчик получения URL пользователя
 	DeleteHandler   *DeleteHandler   // Обработчик удаления URL
 	PingHandler     *PingHandler     // Обработчик проверки соединения с хранилищем
+	StatsHandler    *StatsHandler    // Обработчик получения статистики сервиса
 }
 
 // NewURLHandler создает объединённый хендлер для всех маршрутов сервиса.
@@ -25,6 +26,7 @@ type URLHandler struct {
 //   - fetcher: интерфейс получения всех URL пользователя
 //   - deleter: интерфейс удаления URL
 //   - pinger: интерфейс проверки соединения с хранилищем
+//   - statsProvider: интерфейс получения статистики сервиса
 //   - baseURL: базовый URL приложения
 //
 // Возвращает:
@@ -36,6 +38,7 @@ func NewURLHandler(
 	fetcher models.URLFetcher,
 	deleter models.URLDeleter,
 	pinger models.Pinger,
+	statsProvider models.StatsProvider,
 	baseURL string,
 ) *URLHandler {
 	return &URLHandler{
@@ -44,5 +47,6 @@ func NewURLHandler(
 		UserURLsHandler: NewUserURLsHandler(fetcher),
 		DeleteHandler:   NewDeleteHandler(deleter),
 		PingHandler:     NewPingHandler(pinger),
+		StatsHandler:    NewStatsHandler(statsProvider),
 	}
 }

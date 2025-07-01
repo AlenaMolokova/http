@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/gorilla/mux"
 )
 
@@ -54,6 +55,16 @@ type mockURLGetter struct {
 
 func (m mockURLGetter) Get(_ context.Context, _ string) (string, bool) {
 	return m.url, m.exists
+}
+
+// mockStatsProvider реализует интерфейс StatsProvider для тестов.
+type mockStatsProvider struct {
+	stats models.Stats
+	err   error
+}
+
+func (m mockStatsProvider) GetStats(_ context.Context) (models.Stats, error) {
+	return m.stats, m.err
 }
 
 // TestHandleDeleteURLsInternalError проверяет поведение обработчика при ошибке удаления URL.
@@ -162,5 +173,106 @@ func TestHandleRedirectGone(t *testing.T) {
 
 	if w.Code != http.StatusGone {
 		t.Errorf("Expected 410, got %d", w.Code)
+	}
+}
+
+// TestHandleStatsSuccess проверяет успешное получение статистики.
+func TestHandleStatsSuccess(t *testing.T) {
+	expectedStats := models.Stats{
+		URLs:  150,
+		Users: 42,
+	}
+	handler := NewStatsHandler(mockStatsProvider{stats: expectedStats})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/stats", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleStats(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "application/json" {
+		t.Errorf("Expected Content-Type application/json, got %s", contentType)
+	}
+
+	var actualStats models.Stats
+	if err := json.Unmarshal(w.Body.Bytes(), &actualStats); err != nil {
+		t.Errorf("Failed to unmarshal response: %v", err)
+	}
+
+	if actualStats.URLs != expectedStats.URLs {
+		t.Errorf("Expected URLs %d, got %d", expectedStats.URLs, actualStats.URLs)
+	}
+	if actualStats.Users != expectedStats.Users {
+		t.Errorf("Expected Users %d, got %d", expectedStats.Users, actualStats.Users)
+	}
+}
+
+// TestHandleStatsInternalError проверяет поведение при ошибке получения статистики.
+func TestHandleStatsInternalError(t *testing.T) {
+	handler := NewStatsHandler(mockStatsProvider{err: errors.New("database error")})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/stats", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleStats(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("Expected 500, got %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "Internal server error") {
+		t.Errorf("Expected error message, got %s", w.Body.String())
+	}
+}
+
+// TestHandleStatsMethodNotAllowed проверяет отказ на методы, отличные от GET.
+func TestHandleStatsMethodNotAllowed(t *testing.T) {
+	handler := NewStatsHandler(mockStatsProvider{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/internal/stats", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleStats(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Expected 405, got %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "Method not allowed") {
+		t.Errorf("Expected method not allowed message, got %s", w.Body.String())
+	}
+}
+
+// TestHandleStatsZeroValues проверяет обработку нулевых значений статистики.
+func TestHandleStatsZeroValues(t *testing.T) {
+	zeroStats := models.Stats{
+		URLs:  0,
+		Users: 0,
+	}
+	handler := NewStatsHandler(mockStatsProvider{stats: zeroStats})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/stats", nil)
+	w := httptest.NewRecorder()
+
+	handler.HandleStats(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected 200, got %d", w.Code)
+	}
+
+	var actualStats models.Stats
+	if err := json.Unmarshal(w.Body.Bytes(), &actualStats); err != nil {
+		t.Errorf("Failed to unmarshal response: %v", err)
+	}
+
+	if actualStats.URLs != 0 {
+		t.Errorf("Expected URLs 0, got %d", actualStats.URLs)
+	}
+	if actualStats.Users != 0 {
+		t.Errorf("Expected Users 0, got %d", actualStats.Users)
 	}
 }

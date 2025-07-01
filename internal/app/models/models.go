@@ -49,6 +49,12 @@ type ShortenResult struct {
 	IsNew    bool   `json:"is_new"`
 }
 
+// Stats представляет статистику сервиса.
+type Stats struct {
+	URLs  int `json:"urls"`
+	Users int `json:"users"`
+}
+
 // URLShortener интерфейс, определяющий методы для сокращения URL.
 type URLShortener interface {
 	// ShortenURL создает сокращенную версию оригинального URL для указанного пользователя.
@@ -102,6 +108,12 @@ type URLSaver interface {
 type URLBatchSaver interface {
 	// SaveBatch сохраняет пакет URL для указанного пользователя.
 	SaveBatch(ctx context.Context, items map[string]string, userID string) error
+}
+
+// StatsProvider интерфейс, определяющий методы для получения статистики сервиса.
+type StatsProvider interface {
+	// GetStats возвращает статистику сервиса (количество URL и пользователей).
+	GetStats(ctx context.Context) (Stats, error)
 }
 
 // MarshalJSON реализует интерфейс json.Marshaler для типа ShortenResponse.

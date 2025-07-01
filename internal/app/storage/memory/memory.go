@@ -172,3 +172,31 @@ func (s *MemoryStorage) DeleteURLs(ctx context.Context, shortIDs []string, userI
 func (s *MemoryStorage) Ping(ctx context.Context) error {
 	return errors.New("memory storage does not support database connection check")
 }
+
+// GetStats возвращает статистику сервиса: количество сокращенных URL и пользователей.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//
+// Возвращает:
+//   - структуру Stats с информацией о количестве URL и пользователей
+//   - ошибку (в текущей реализации всегда nil)
+func (s *MemoryStorage) GetStats(ctx context.Context) (models.Stats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var urlsCount int
+	userIDs := make(map[string]bool)
+
+	for _, url := range s.urls {
+		if !url.IsDeleted {
+			urlsCount++
+			userIDs[url.UserID] = true
+		}
+	}
+
+	return models.Stats{
+		URLs:  urlsCount,
+		Users: len(userIDs),
+	}, nil
+}

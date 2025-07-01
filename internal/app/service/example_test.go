@@ -121,6 +121,23 @@ func (m *mockStorage) Ping(ctx context.Context) error {
 	return nil
 }
 
+// GetStats возвращает статистику сервиса.
+func (m *mockStorage) GetStats(ctx context.Context) (models.Stats, error) {
+	users := len(m.userURLs)
+	urlCount := 0
+	for _, userURLs := range m.userURLs {
+		for shortID := range userURLs {
+			if !m.deleted[shortID] {
+				urlCount++
+			}
+		}
+	}
+	return models.Stats{
+		URLs:  urlCount,
+		Users: users,
+	}, nil
+}
+
 // mockGenerator имитирует генератор коротких идентификаторов.
 type mockGenerator struct {
 	counter int
@@ -139,7 +156,7 @@ func Example_shortenURL() {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	originalURL := "https://very-long-url.com/with/path/and?query=parameters"
@@ -175,7 +192,7 @@ func Example_shortenBatch() {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	batch := []models.BatchShortenRequest{
@@ -211,7 +228,7 @@ func Example_getUserURLs() {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	urls := []string{
@@ -253,7 +270,7 @@ func Example_deleteURLs() {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	urls := []string{
@@ -300,7 +317,7 @@ func TestShortenURL(t *testing.T) {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	originalURL := "https://very-long-url.com/with/path"
@@ -325,7 +342,7 @@ func TestShortenBatch(t *testing.T) {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	batch := []models.BatchShortenRequest{
@@ -361,7 +378,7 @@ func TestGetURLsByUserID(t *testing.T) {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	urls := []string{
@@ -395,7 +412,7 @@ func TestDeleteURLs(t *testing.T) {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	userID := "user123"
 	urls := []string{
@@ -436,7 +453,7 @@ func TestPing(t *testing.T) {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	err := svc.Ping(ctx)
 	assert.NoError(t, err)
@@ -450,7 +467,7 @@ func Example_httpHandlers() {
 	generator := &mockGenerator{}
 	baseURL := "http://example.com"
 
-	svc := service.NewService(storage, storage, storage, storage, storage, storage, generator, baseURL)
+	svc := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, baseURL)
 
 	// Пример HTTP хендлера для сокращения URL
 	shortenHandler := func(w http.ResponseWriter, r *http.Request) {

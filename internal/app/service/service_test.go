@@ -9,6 +9,7 @@ import (
 	"github.com/AlenaMolokova/http/internal/app/models"
 )
 
+// MockURLSaver реализует интерфейс URLSaver для тестирования.
 type MockURLSaver struct {
 	SaveFunc              func(ctx context.Context, shortID, originalURL, userID string) error
 	FindByOriginalURLFunc func(ctx context.Context, originalURL string) (string, error)
@@ -22,6 +23,7 @@ func (m *MockURLSaver) FindByOriginalURL(ctx context.Context, originalURL string
 	return m.FindByOriginalURLFunc(ctx, originalURL)
 }
 
+// MockURLBatchSaver реализует интерфейс URLBatchSaver для тестирования.
 type MockURLBatchSaver struct {
 	SaveBatchFunc func(ctx context.Context, items map[string]string, userID string) error
 }
@@ -30,6 +32,7 @@ func (m *MockURLBatchSaver) SaveBatch(ctx context.Context, items map[string]stri
 	return m.SaveBatchFunc(ctx, items, userID)
 }
 
+// MockURLGetter реализует интерфейс URLGetter для тестирования.
 type MockURLGetter struct {
 	GetFunc func(ctx context.Context, shortID string) (string, bool)
 }
@@ -38,6 +41,7 @@ func (m *MockURLGetter) Get(ctx context.Context, shortID string) (string, bool) 
 	return m.GetFunc(ctx, shortID)
 }
 
+// MockURLFetcher реализует интерфейс URLFetcher для тестирования.
 type MockURLFetcher struct {
 	GetURLsByUserIDFunc func(ctx context.Context, userID string) ([]models.UserURL, error)
 }
@@ -46,6 +50,7 @@ func (m *MockURLFetcher) GetURLsByUserID(ctx context.Context, userID string) ([]
 	return m.GetURLsByUserIDFunc(ctx, userID)
 }
 
+// MockURLDeleter реализует интерфейс URLDeleter для тестирования.
 type MockURLDeleter struct {
 	DeleteURLsFunc func(ctx context.Context, shortIDs []string, userID string) error
 }
@@ -54,6 +59,7 @@ func (m *MockURLDeleter) DeleteURLs(ctx context.Context, shortIDs []string, user
 	return m.DeleteURLsFunc(ctx, shortIDs, userID)
 }
 
+// MockPinger реализует интерфейс Pinger для тестирования.
 type MockPinger struct {
 	PingFunc func(ctx context.Context) error
 }
@@ -62,6 +68,16 @@ func (m *MockPinger) Ping(ctx context.Context) error {
 	return m.PingFunc(ctx)
 }
 
+// MockStatsProvider реализует интерфейс StatsProvider для тестирования.
+type MockStatsProvider struct {
+	GetStatsFunc func(ctx context.Context) (models.Stats, error)
+}
+
+func (m *MockStatsProvider) GetStats(ctx context.Context) (models.Stats, error) {
+	return m.GetStatsFunc(ctx)
+}
+
+// MockGenerator реализует интерфейс IDGenerator для тестирования.
 type MockGenerator struct {
 	GenerateFunc func() string
 }
@@ -77,10 +93,15 @@ func TestNewService(t *testing.T) {
 	fetcher := &MockURLFetcher{}
 	deleter := &MockURLDeleter{}
 	pinger := &MockPinger{}
+	statsProvider := &MockStatsProvider{
+		GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+			return models.Stats{URLs: 0, Users: 0}, nil
+		},
+	}
 	gen := &MockGenerator{}
 	baseURL := "http://example.com"
 
-	service := NewService(saver, batch, getter, fetcher, deleter, pinger, gen, baseURL)
+	service := NewService(saver, batch, getter, fetcher, deleter, pinger, statsProvider, gen, baseURL)
 
 	if service == nil {
 		t.Fatal("NewService returned nil")
@@ -204,6 +225,11 @@ func TestService_ShortenURL(t *testing.T) {
 			generator := &MockGenerator{
 				GenerateFunc: tt.generateFunc,
 			}
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+					return models.Stats{URLs: 0, Users: 0}, nil
+				},
+			}
 
 			service := NewService(
 				saver,
@@ -212,6 +238,7 @@ func TestService_ShortenURL(t *testing.T) {
 				&MockURLFetcher{},
 				&MockURLDeleter{},
 				&MockPinger{},
+				statsProvider,
 				generator,
 				baseURL,
 			)
@@ -340,6 +367,11 @@ func TestService_ShortenBatch(t *testing.T) {
 			generator := &MockGenerator{
 				GenerateFunc: generateFunc,
 			}
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+					return models.Stats{URLs: 0, Users: 0}, nil
+				},
+			}
 
 			service := NewService(
 				&MockURLSaver{},
@@ -348,6 +380,7 @@ func TestService_ShortenBatch(t *testing.T) {
 				&MockURLFetcher{},
 				&MockURLDeleter{},
 				&MockPinger{},
+				statsProvider,
 				generator,
 				baseURL,
 			)
@@ -409,6 +442,11 @@ func TestService_Get(t *testing.T) {
 			getter := &MockURLGetter{
 				GetFunc: tt.getFunc,
 			}
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+					return models.Stats{URLs: 0, Users: 0}, nil
+				},
+			}
 
 			service := NewService(
 				&MockURLSaver{},
@@ -417,6 +455,7 @@ func TestService_Get(t *testing.T) {
 				&MockURLFetcher{},
 				&MockURLDeleter{},
 				&MockPinger{},
+				statsProvider,
 				&MockGenerator{},
 				"http://short.url",
 			)
@@ -512,6 +551,11 @@ func TestService_GetURLsByUserID(t *testing.T) {
 			fetcher := &MockURLFetcher{
 				GetURLsByUserIDFunc: tt.getURLsByUserIDFunc,
 			}
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+					return models.Stats{URLs: 0, Users: 0}, nil
+				},
+			}
 
 			service := NewService(
 				&MockURLSaver{},
@@ -520,6 +564,7 @@ func TestService_GetURLsByUserID(t *testing.T) {
 				fetcher,
 				&MockURLDeleter{},
 				&MockPinger{},
+				statsProvider,
 				&MockGenerator{},
 				baseURL,
 			)
@@ -631,7 +676,6 @@ func TestService_DeleteURLs(t *testing.T) {
 			deleter := &MockURLDeleter{
 				DeleteURLsFunc: tt.deleteURLsFunc,
 			}
-
 			fetcher := &MockURLFetcher{
 				GetURLsByUserIDFunc: func(ctx context.Context, uid string) ([]models.UserURL, error) {
 					return []models.UserURL{
@@ -643,6 +687,11 @@ func TestService_DeleteURLs(t *testing.T) {
 					}, nil
 				},
 			}
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+					return models.Stats{URLs: 0, Users: 0}, nil
+				},
+			}
 
 			service := NewService(
 				&MockURLSaver{},
@@ -651,6 +700,7 @@ func TestService_DeleteURLs(t *testing.T) {
 				fetcher,
 				deleter,
 				&MockPinger{},
+				statsProvider,
 				&MockGenerator{},
 				"http://short.url",
 			)
@@ -716,6 +766,11 @@ func TestService_Ping(t *testing.T) {
 			pinger := &MockPinger{
 				PingFunc: tt.pingFunc,
 			}
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+					return models.Stats{URLs: 0, Users: 0}, nil
+				},
+			}
 
 			service := NewService(
 				&MockURLSaver{},
@@ -724,6 +779,7 @@ func TestService_Ping(t *testing.T) {
 				&MockURLFetcher{},
 				&MockURLDeleter{},
 				pinger,
+				statsProvider,
 				&MockGenerator{},
 				"http://short.url",
 			)
@@ -772,6 +828,12 @@ func TestService_CacheClearOnShortenURL(t *testing.T) {
 		},
 	}
 
+	statsProvider := &MockStatsProvider{
+		GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+			return models.Stats{URLs: 0, Users: 0}, nil
+		},
+	}
+
 	service := NewService(
 		saver,
 		&MockURLBatchSaver{},
@@ -779,6 +841,7 @@ func TestService_CacheClearOnShortenURL(t *testing.T) {
 		fetcher,
 		&MockURLDeleter{},
 		&MockPinger{},
+		statsProvider,
 		generator,
 		"http://short.url",
 	)
@@ -833,6 +896,12 @@ func TestService_CacheClearOnShortenBatch(t *testing.T) {
 		},
 	}
 
+	statsProvider := &MockStatsProvider{
+		GetStatsFunc: func(ctx context.Context) (models.Stats, error) {
+			return models.Stats{URLs: 0, Users: 0}, nil
+		},
+	}
+
 	service := NewService(
 		&MockURLSaver{},
 		batchSaver,
@@ -840,6 +909,7 @@ func TestService_CacheClearOnShortenBatch(t *testing.T) {
 		fetcher,
 		&MockURLDeleter{},
 		&MockPinger{},
+		statsProvider,
 		generator,
 		"http://short.url",
 	)
@@ -870,5 +940,69 @@ func TestService_CacheClearOnShortenBatch(t *testing.T) {
 
 	if exists {
 		t.Error("Cache should be cleared after ShortenBatch")
+	}
+}
+
+func TestService_GetStats(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name          string
+		getStatsFunc  func(ctx context.Context) (models.Stats, error)
+		expectedStats models.Stats
+		expectError   bool
+	}{
+		{
+			name: "Get stats success",
+			getStatsFunc: func(ctx context.Context) (models.Stats, error) {
+				return models.Stats{URLs: 100, Users: 25}, nil
+			},
+			expectedStats: models.Stats{URLs: 100, Users: 25},
+			expectError:   false,
+		},
+		{
+			name: "Get stats error",
+			getStatsFunc: func(ctx context.Context) (models.Stats, error) {
+				return models.Stats{}, errors.New("stats error")
+			},
+			expectedStats: models.Stats{},
+			expectError:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			statsProvider := &MockStatsProvider{
+				GetStatsFunc: tt.getStatsFunc,
+			}
+			service := NewService(
+				&MockURLSaver{},
+				&MockURLBatchSaver{},
+				&MockURLGetter{},
+				&MockURLFetcher{},
+				&MockURLDeleter{},
+				&MockPinger{},
+				statsProvider,
+				&MockGenerator{},
+				"http://short.url",
+			)
+
+			stats, err := service.GetStats(ctx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if !reflect.DeepEqual(stats, tt.expectedStats) {
+				t.Errorf("Expected stats %+v, got %+v", tt.expectedStats, stats)
+			}
+		})
 	}
 }

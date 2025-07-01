@@ -1,3 +1,4 @@
+// Package handler_test предоставляет примеры использования обработчиков HTTP-запросов.
 package handler_test
 
 import (
@@ -86,6 +87,25 @@ type MockPingerError struct{}
 // Ping имитирует ошибку соединения с хранилищем для тестов.
 func (m *MockPingerError) Ping(ctx context.Context) error {
 	return fmt.Errorf("database connection failed")
+}
+
+// MockStatsProvider - мок для сервиса получения статистики.
+type MockStatsProvider struct{}
+
+// GetStats имитирует получение статистики для тестов.
+func (m *MockStatsProvider) GetStats(ctx context.Context) (models.Stats, error) {
+	return models.Stats{
+		URLs:  100,
+		Users: 25,
+	}, nil
+}
+
+// MockStatsProviderError - мок для сервиса получения статистики с ошибкой.
+type MockStatsProviderError struct{}
+
+// GetStats имитирует ошибку получения статистики для тестов.
+func (m *MockStatsProviderError) GetStats(ctx context.Context) (models.Stats, error) {
+	return models.Stats{}, fmt.Errorf("failed to get stats")
 }
 
 // addAuthCookies добавляет корректные аутентификационные cookies к запросу,
@@ -408,6 +428,95 @@ func ExamplePingHandler_HandlePing_error() {
 	// Код ответа: 500
 }
 
+// ExampleStatsHandler_HandleStats демонстрирует использование обработчика для получения статистики.
+func ExampleStatsHandler_HandleStats() {
+	statsProvider := &MockStatsProvider{}
+
+	handler := handler.NewStatsHandler(statsProvider)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/stats", nil)
+
+	rr := httptest.NewRecorder()
+
+	handler.HandleStats(rr, req)
+
+	resp := rr.Result()
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Printf("Ошибка чтения ответа: %v\n", err)
+		return
+	}
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("Ошибка закрытия тела ответа: %v\n", err)
+		return
+	}
+
+	var stats models.Stats
+	if err := json.Unmarshal(bodyBytes, &stats); err != nil {
+		fmt.Printf("Ошибка разбора JSON ответа: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Код ответа: %d\n", resp.StatusCode)
+	fmt.Printf("Тип содержимого: %s\n", resp.Header.Get("Content-Type"))
+	fmt.Printf("Количество URL: %d\n", stats.URLs)
+	fmt.Printf("Количество пользователей: %d\n", stats.Users)
+
+	// Output:
+	// Код ответа: 200
+	// Тип содержимого: application/json
+	// Количество URL: 100
+	// Количество пользователей: 25
+}
+
+// ExampleStatsHandler_HandleStats_error демонстрирует обработку ошибки получения статистики.
+func ExampleStatsHandler_HandleStats_error() {
+	statsProvider := &MockStatsProviderError{}
+
+	handler := handler.NewStatsHandler(statsProvider)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/stats", nil)
+
+	rr := httptest.NewRecorder()
+
+	handler.HandleStats(rr, req)
+
+	resp := rr.Result()
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("Ошибка закрытия тела ответа: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Код ответа: %d\n", resp.StatusCode)
+
+	// Output:
+	// Код ответа: 500
+}
+
+// ExampleStatsHandler_HandleStats_methodNotAllowed демонстрирует обработку неподдерживаемого HTTP метода.
+func ExampleStatsHandler_HandleStats_methodNotAllowed() {
+	statsProvider := &MockStatsProvider{}
+
+	handler := handler.NewStatsHandler(statsProvider)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/internal/stats", nil)
+
+	rr := httptest.NewRecorder()
+
+	handler.HandleStats(rr, req)
+
+	resp := rr.Result()
+	if err := resp.Body.Close(); err != nil {
+		fmt.Printf("Ошибка закрытия тела ответа: %v\n", err)
+		return
+	}
+
+	fmt.Printf("Код ответа: %d\n", resp.StatusCode)
+
+	// Output:
+	// Код ответа: 405
+}
+
 // ExampleURLHandler демонстрирует создание и использование комбинированного обработчика URL.
 func ExampleURLHandler() {
 	shortener := &MockURLShortener{}
@@ -416,9 +525,10 @@ func ExampleURLHandler() {
 	fetcher := &MockURLFetcher{}
 	deleter := &MockURLDeleter{}
 	pinger := &MockPinger{}
+	statsProvider := &MockStatsProvider{}
 	baseURL := "http://localhost:8080"
 
-	handler := handler.NewURLHandler(shortener, batchShortener, getter, fetcher, deleter, pinger, baseURL)
+	handler := handler.NewURLHandler(shortener, batchShortener, getter, fetcher, deleter, pinger, statsProvider, baseURL)
 
 	reqBody := `{"url":"https://example.com/very/long/url"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader(reqBody))

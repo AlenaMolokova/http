@@ -159,6 +159,34 @@ func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID
 	return nil
 }
 
+// GetStats возвращает статистику сервиса: количество сокращенных URL и пользователей.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//
+// Возвращает:
+//   - структуру Stats с информацией о количестве URL и пользователей
+//   - ошибку (в текущей реализации всегда nil)
+func (fs *FileStorage) GetStats(ctx context.Context) (*models.Stats, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	var urlsCount int
+	userIDs := make(map[string]bool)
+
+	for _, url := range fs.urls {
+		if !url.IsDeleted {
+			urlsCount++
+			userIDs[url.UserID] = true
+		}
+	}
+
+	return &models.Stats{
+		URLs:  urlsCount,
+		Users: len(userIDs),
+	}, nil
+}
+
 // Ping проверяет доступность хранилища.
 func (fs *FileStorage) Ping(ctx context.Context) error {
 	return errors.New("file storage does not support database connection check")

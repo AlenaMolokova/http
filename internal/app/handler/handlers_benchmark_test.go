@@ -39,8 +39,8 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
-	h := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewURLHandler(s, s, s, s, s, s, s, "http://localhost:8080")
 
 	testCases := []struct {
 		name string
@@ -89,8 +89,8 @@ func BenchmarkHandleShortenURL(b *testing.B) {
 func BenchmarkHandleRedirect(b *testing.B) {
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
-	h := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewURLHandler(s, s, s, s, s, s, s, "http://localhost:8080")
 
 	ctx := context.Background()
 
@@ -146,8 +146,8 @@ func BenchmarkHandleShortenURLJSON(b *testing.B) {
 	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
-	h := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewURLHandler(s, s, s, s, s, s, s, "http://localhost:8080")
 
 	testCases := []struct {
 		name string
@@ -197,8 +197,8 @@ func BenchmarkHandleBatchShortenURL(b *testing.B) {
 	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
-	h := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewURLHandler(s, s, s, s, s, s, s, "http://localhost:8080")
 
 	// Создаем батчи разных размеров
 	createBatch := func(size int) string {
@@ -265,7 +265,7 @@ func BenchmarkHandleBatchShortenURL(b *testing.B) {
 func BenchmarkHandleDeleteURLs(b *testing.B) {
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	h := NewDeleteHandler(s)
 
 	userID := "test-user"
@@ -364,7 +364,7 @@ func BenchmarkHandleGetUserURLs(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			storage := memory.NewMemoryStorage()
 			generator := generator.New(8)
-			s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+			s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 			h := NewUserURLsHandler(s)
 
 			userID := "test-user"
@@ -412,7 +412,7 @@ func BenchmarkHandleGetUserURLs(b *testing.B) {
 func BenchmarkHandlePing(b *testing.B) {
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	h := NewPingHandler(s)
 
 	b.ResetTimer()
@@ -445,8 +445,8 @@ func BenchmarkFullPipeline(b *testing.B) {
 	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
-	urlHandler := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	urlHandler := NewURLHandler(s, s, s, s, s, s, s, "http://localhost:8080")
 
 	b.ResetTimer()
 
@@ -503,8 +503,8 @@ func BenchmarkConcurrentShortenURL(b *testing.B) {
 	userID := "test-user"
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := service.NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
-	h := NewURLHandler(s, s, s, s, s, s, "http://localhost:8080")
+	s := service.NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	h := NewURLHandler(s, s, s, s, s, s, s, "http://localhost:8080")
 
 	b.RunParallel(func(pb *testing.PB) {
 		counter := 0

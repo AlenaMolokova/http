@@ -12,7 +12,7 @@ import (
 func BenchmarkShortenURL(b *testing.B) {
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	s := NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	ctx := context.Background()
 	originalURL := "https://example.com"
 	userID := "user123"
@@ -29,7 +29,7 @@ func BenchmarkShortenURL(b *testing.B) {
 func BenchmarkShortenBatch(b *testing.B) {
 	storage := memory.NewMemoryStorage()
 	generator := generator.New(8)
-	s := NewService(storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
+	s := NewService(storage, storage, storage, storage, storage, storage, storage, generator, "http://localhost:8080")
 	ctx := context.Background()
 	batch := []models.BatchShortenRequest{
 		{CorrelationID: "1", OriginalURL: "https://example.com/1"},

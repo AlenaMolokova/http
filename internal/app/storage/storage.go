@@ -117,6 +117,14 @@ func (s *Storage) AsPinger() models.Pinger {
 	return s.impl.(models.Pinger)
 }
 
+// AsStatsProvider returns StatsProvider interface implementation for the current storage.
+//
+// Returns:
+//   - models.StatsProvider: interface for getting service statistics
+func (s *Storage) AsStatsProvider() models.StatsProvider {
+	return s.impl.(models.StatsProvider)
+}
+
 // Close закрывает хранилище и освобождает ресурсы.
 // Для файлового хранилища обеспечивает сохранение всех данных в файл.
 //

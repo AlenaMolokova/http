@@ -196,6 +196,39 @@ func (db *DatabaseStorage) DeleteURLs(ctx context.Context, shortIDs []string, us
 	return nil
 }
 
+// GetStats возвращает статистику использования сервиса.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//
+// Возвращает:
+//   - статистику сервиса (количество URL и пользователей)
+//   - ошибку, если не удалось получить статистику
+func (db *DatabaseStorage) GetStats(ctx context.Context) (*models.Stats, error) {
+	var urlCount, userCount int64
+
+	// Получаем количество активных URL (не удаленных)
+	err := db.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM urls WHERE is_deleted = false
+	`).Scan(&urlCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get URL count: %w", err)
+	}
+
+	// Получаем количество уникальных пользователей
+	err = db.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT user_id) FROM urls
+	`).Scan(&userCount)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user count: %w", err)
+	}
+
+	return &models.Stats{
+		URLs:  int(urlCount),
+		Users: int(userCount),
+	}, nil
+}
+
 // Ping проверяет доступность базы данных.
 //
 // Параметры:

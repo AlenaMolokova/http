@@ -123,7 +123,8 @@ func NewApp(cfg *config.Config) (*App, error) {
 		urlStorage.AsURLFetcher(),
 		urlStorage.AsURLDeleter(),
 		urlStorage.AsPinger(),
-		urlGenerator, // *generator.SimpleGenerator автоматически реализует service.IDGenerator
+		urlStorage.AsStatsProvider(),
+		urlGenerator,
 		cfg.BaseURL,
 	)
 
@@ -135,6 +136,7 @@ func NewApp(cfg *config.Config) (*App, error) {
 		urlService, // URLFetcher
 		urlService, // URLDeleter
 		urlService, // Pinger
+		urlService, // StatsProvider - добавляем поддержку статистики
 		cfg.BaseURL,
 	)
 
