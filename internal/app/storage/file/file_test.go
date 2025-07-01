@@ -237,3 +237,28 @@ func TestFileStorage_scheduleSave(t *testing.T) {
 	storage.scheduleSave()
 	assert.FileExists(t, filePath)
 }
+
+// TestFileStorage_GetStats проверяет получение статистики хранилища.
+func TestFileStorage_GetStats(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "urls.json")
+
+	storage, err := NewFileStorage(filePath)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	require.NoError(t, storage.Save(ctx, "abc123", "https://example.com", "user1"))
+	require.NoError(t, storage.Save(ctx, "def456", "https://test.com", "user1"))
+	require.NoError(t, storage.Save(ctx, "ghi789", "https://other.com", "user2"))
+	storage.urls["def456"] = models.UserURL{
+		ShortURL:    "def456",
+		OriginalURL: "https://test.com",
+		UserID:      "user1",
+		IsDeleted:   true,
+	}
+
+	stats, err := storage.GetStats(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 2, stats.URLs, "Expected 2 non-deleted URLs")
+	assert.Equal(t, 2, stats.Users, "Expected 2 unique users")
+}

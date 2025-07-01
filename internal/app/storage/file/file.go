@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -72,14 +73,13 @@ func NewFileStorage(filePath string) (*FileStorage, error) {
 }
 
 // Save сохраняет новый URL-адрес в хранилище.
-// Добавляет запись в память и помечает хранилище как измененное для последующей записи в файл.
 // Сохранение в файл происходит асинхронно.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - shortID: короткий идентификатор URL
-//   - originalURL: оригинальный URL
-//   - userID: идентификатор пользователя, связанного с URL
+//   - shortID: сокращенный идентификатор URL
+//   - originalURL: оригинальный URL-адрес
+//   - userID: идентификатор пользователя, который создал сокращение
 //
 // Возвращает:
 //   - ошибку, если не удалось сохранить URL (в текущей реализации всегда nil)
@@ -99,16 +99,15 @@ func (fs *FileStorage) Save(ctx context.Context, shortID, originalURL, userID st
 }
 
 // FindByOriginalURL ищет сокращенный идентификатор по оригинальному URL-адресу.
-// Проверяет все записи в хранилище и возвращает первый неудаленный короткий идентификатор,
-// соответствующий указанному оригинальному URL.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - originalURL: оригинальный URL для поиска
+//   - originalURL: оригинальный URL-адрес для поиска
 //
 // Возвращает:
-//   - короткий идентификатор, если URL найден
-//   - пустую строку и nil, если URL не найден
+//   - сокращенный идентификатор, если URL найден
+//   - пустую строку, если URL не найден
+//   - ошибку (в текущей реализации всегда nil)
 func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string) (string, error) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -122,16 +121,15 @@ func (fs *FileStorage) FindByOriginalURL(ctx context.Context, originalURL string
 }
 
 // SaveBatch сохраняет пакет URL-адресов в хранилище.
-// Добавляет все переданные URL в память и помечает хранилище как измененное.
 // Сохранение в файл происходит асинхронно.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - items: словарь, где ключ - короткий идентификатор, значение - оригинальный URL
-//   - userID: идентификатор пользователя, связанного с URL
+//   - items: карта, где ключ - сокращенный идентификатор, значение - оригинальный URL
+//   - userID: идентификатор пользователя, которому принадлежат URL-адреса
 //
 // Возвращает:
-//   - ошибку, если не удалось сохранить пакет (в текущей реализации всегда nil)
+//   - ошибку, если не удалось сохранить пакет URL-адресов (в текущей реализации всегда nil)
 func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, userID string) error {
 	fs.mu.Lock()
 	for shortID, originalURL := range items {
@@ -150,15 +148,14 @@ func (fs *FileStorage) SaveBatch(ctx context.Context, items map[string]string, u
 }
 
 // Get возвращает оригинальный URL-адрес по сокращенному идентификатору.
-// Проверяет наличие записи в хранилище и возвращает соответствующий URL, если он не помечен как удаленный.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - shortID: короткий идентификатор URL
+//   - shortID: сокращенный идентификатор URL
 //
 // Возвращает:
-//   - оригинальный URL и true, если запись найдена и не удалена
-//   - пустую строку и false, если запись не найдена или помечена как удаленная
+//   - оригинальный URL-адрес и true, если сокращение найдено и не удалено
+//   - пустую строку и false, если сокращение не найдено или удалено
 func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
@@ -171,14 +168,13 @@ func (fs *FileStorage) Get(ctx context.Context, shortID string) (string, bool) {
 }
 
 // GetURLsByUserID возвращает все неудаленные URL-адреса, созданные указанным пользователем.
-// Формирует список записей, соответствующих указанному идентификатору пользователя.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
 //   - userID: идентификатор пользователя
 //
 // Возвращает:
-//   - слайс моделей UserURL, содержащий все неудаленные URL пользователя
+//   - список структур UserURL, содержащих сокращенные и оригинальные URL-адреса
 //   - ошибку (в текущей реализации всегда nil)
 func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]models.UserURL, error) {
 	fs.mu.RLock()
@@ -194,16 +190,15 @@ func (fs *FileStorage) GetURLsByUserID(ctx context.Context, userID string) ([]mo
 }
 
 // DeleteURLs помечает указанные URL-адреса как удаленные.
-// Обновляет флаг IsDeleted для записей, соответствующих переданным коротким идентификаторам
-// и идентификатору пользователя. Помечает хранилище как измененное для асинхронной записи в файл.
+// Фактическое удаление из файла происходит асинхронно.
 //
 // Параметры:
 //   - ctx: контекст выполнения операции
-//   - shortIDs: слайс коротких идентификаторов URL для удаления
-//   - userID: идентификатор пользователя
+//   - shortIDs: список сокращенных идентификаторов для удаления
+//   - userID: идентификатор пользователя, которому принадлежат URL-адреса
 //
 // Возвращает:
-//   - ошибку, если не удалось выполнить удаление (в текущей реализации всегда nil)
+//   - ошибку, если не удалось пометить URL-адреса как удаленные (в текущей реализации всегда nil)
 func (fs *FileStorage) DeleteURLs(ctx context.Context, shortIDs []string, userID string) error {
 	fs.mu.Lock()
 	for _, shortID := range shortIDs {
@@ -248,6 +243,14 @@ func (fs *FileStorage) GetStats(ctx context.Context) (models.Stats, error) {
 }
 
 // Ping проверяет доступность хранилища.
+// Поскольку это файловое хранилище, метод всегда возвращает ошибку,
+// указывающую на то, что проверка соединения не поддерживается.
+//
+// Параметры:
+//   - ctx: контекст выполнения операции
+//
+// Возвращает:
+//   - ошибку с сообщением о неподдерживаемой операции
 func (fs *FileStorage) Ping(ctx context.Context) error {
 	return errors.New("file storage does not support database connection check")
 }
@@ -293,11 +296,13 @@ func (fs *FileStorage) saveToFile() error {
 
 	// Создаём директорию, если она не существует
 	if err := os.MkdirAll(filepath.Dir(tmpFile), 0755); err != nil {
+		logrus.WithError(err).Errorf("Failed to create directory for %s", tmpFile)
 		return err
 	}
 
 	file, err := os.Create(tmpFile)
 	if err != nil {
+		logrus.WithError(err).Errorf("Failed to create temp file %s", tmpFile)
 		return err
 	}
 
@@ -315,23 +320,34 @@ func (fs *FileStorage) saveToFile() error {
 	if err := encoder.Encode(entries); err != nil {
 		_ = file.Close()
 		_ = os.Remove(tmpFile)
+		logrus.WithError(err).Error("Failed to encode JSON")
 		return err
 	}
 
 	if err := writer.Flush(); err != nil {
 		_ = file.Close()
 		_ = os.Remove(tmpFile)
+		logrus.WithError(err).Error("Failed to flush writer")
 		return err
 	}
 
 	if err := file.Close(); err != nil {
+		_ = os.Remove(tmpFile)
+		logrus.WithError(err).Error("Failed to close file")
 		return err
+	}
+
+	// Проверяем существование временного файла перед переименованием
+	if _, err := os.Stat(tmpFile); os.IsNotExist(err) {
+		logrus.Errorf("Temporary file %s does not exist", tmpFile)
+		return fmt.Errorf("temporary file %s does not exist", tmpFile)
 	}
 
 	if err := os.Rename(tmpFile, fs.filePath); err != nil {
 		if removeErr := os.Remove(tmpFile); removeErr != nil && !os.IsNotExist(removeErr) {
 			logrus.WithError(removeErr).Error("Failed to remove temp file after rename error")
 		}
+		logrus.WithError(err).Errorf("Failed to rename %s to %s", tmpFile, fs.filePath)
 		return err
 	}
 
