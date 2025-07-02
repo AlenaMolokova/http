@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package shortener;
+option go_package = "github.com/AlenaMolokova/http/pkg/grpc/pb";
+
+// Сервис сокращения URL
+service ShortenerService {
+  // Сокращение одного URL (текстовый формат)
+  rpc ShortenURL(ShortenURLRequest) returns (ShortenURLResponse);
+  
+  // Сокращение одного URL (JSON формат)
+  rpc ShortenURLJSON(ShortenURLJSONRequest) returns (ShortenURLJSONResponse);
+  
+  // Пакетное сокращение URL
+  rpc BatchShortenURL(BatchShortenURLRequest) returns (BatchShortenURLResponse);
+  
+  // Получение оригинального URL по короткому ID
+  rpc GetURL(GetURLRequest) returns (GetURLResponse);
+  
+  // Получение всех URL пользователя
+  rpc GetUserURLs(GetUserURLsRequest) returns (GetUserURLsResponse);
+  
+  // Удаление URL пользователя
+  rpc DeleteURLs(DeleteURLsRequest) returns (DeleteURLsResponse);
+  
+  // Проверка соединения с хранилищем
+  rpc Ping(PingRequest) returns (PingResponse);
+  
+  // Получение статистики сервиса
+  rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+}
+
+// === Сокращение URL (текстовый) ===
+message ShortenURLRequest {
+  string url = 1;
+  string user_id = 2;
+}
+
+message ShortenURLResponse {
+  string short_url = 1;
+  bool is_new = 2;
+}
+
+// === Сокращение URL (JSON) ===
+message ShortenURLJSONRequest {
+  string url = 1;
+  string user_id = 2;
+}
+
+message ShortenURLJSONResponse {
+  string result = 1;
+  bool is_new = 2;
+}
+
+// === Пакетное сокращение ===
+message BatchShortenURLRequest {
+  repeated BatchItem items = 1;
+  string user_id = 2;
+}
+
+message BatchItem {
+  string correlation_id = 1;
+  string original_url = 2;
+}
+
+message BatchShortenURLResponse {
+  repeated BatchResponseItem items = 1;
+}
+
+message BatchResponseItem {
+  string correlation_id = 1;
+  string short_url = 2;
+}
+
+// === Получение URL ===
+message GetURLRequest {
+  string id = 1;
+}
+
+message GetURLResponse {
+  string original_url = 1;
+  bool found = 2;
+}
+
+// === Получение URL пользователя ===
+message GetUserURLsRequest {
+  string user_id = 1;
+}
+
+message GetUserURLsResponse {
+  repeated UserURL urls = 1;
+}
+
+message UserURL {
+  string short_url = 1;
+  string original_url = 2;
+}
+
+// === Удаление URL ===
+message DeleteURLsRequest {
+  repeated string short_ids = 1;
+  string user_id = 2;
+}
+
+message DeleteURLsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// === Ping ===
+message PingRequest {
+  // Пустое сообщение для ping запроса
+}
+
+message PingResponse {
+  string status = 1;
+  string message = 2;
+}
+
+// === Статистика ===
+message GetStatsRequest {
+  // Пустое сообщение для запроса статистики
+}
+
+message GetStatsResponse {
+  int64 urls = 1;
+  int64 users = 2;
+}

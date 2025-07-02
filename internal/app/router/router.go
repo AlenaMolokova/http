@@ -4,6 +4,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/AlenaMolokova/http/internal/app/handler"
 	"github.com/AlenaMolokova/http/internal/app/models"
 	"github.com/gorilla/mux"
@@ -13,6 +15,15 @@ import (
 // Создается через конструктор NewRouter для обеспечения согласованности.
 type Router struct {
 	*mux.Router
+}
+
+// InitRoutes возвращает настроенный HTTP-обработчик для использования в сервере.
+// Метод необходим для совместимости с существующим кодом.
+//
+// Возвращает:
+//   - http.Handler для использования в HTTP-сервере
+func (r *Router) InitRoutes() http.Handler {
+	return r.Router
 }
 
 // NewRouter создаёт и инициализирует новый маршрутизатор для обработки HTTP-запросов.

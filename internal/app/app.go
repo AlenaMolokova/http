@@ -3,7 +3,6 @@ package app
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/AlenaMolokova/http/internal/app/config"
@@ -17,7 +16,7 @@ import (
 // App представляет собой основную структуру приложения,
 // содержащую обработчик URL, сервисный слой и хранилище.
 type App struct {
-	Handler http.Handler
+	Handler *router.Router
 	Service *service.Service
 	Storage *storage.Storage
 }

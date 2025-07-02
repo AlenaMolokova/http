@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/AlenaMolokova/http/internal/app/models"
+	"github.com/AlenaMolokova/http/internal/app/storage"
 )
 
 // IDGenerator определяет интерфейс для генерации случайных коротких идентификаторов.
@@ -237,4 +238,19 @@ func (s *Service) Ping(ctx context.Context) error {
 //   - error: ошибка, если операция не удалась
 func (s *Service) GetStats(ctx context.Context) (models.Stats, error) {
 	return s.statsProvider.GetStats(ctx)
+}
+
+// NewServiceFromStorage создает сервис из storage (для совместимости).
+func NewServiceFromStorage(storage *storage.Storage, generator IDGenerator, baseURL string) *Service {
+	return NewService(
+		storage.AsURLSaver(),
+		storage.AsURLBatchSaver(),
+		storage.AsURLGetter(),
+		storage.AsURLFetcher(),
+		storage.AsURLDeleter(),
+		storage.AsPinger(),
+		storage.AsStatsProvider(),
+		generator,
+		baseURL,
+	)
 }
