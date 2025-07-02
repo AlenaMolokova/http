@@ -72,7 +72,7 @@ func TestGRPCServer_Lifecycle(t *testing.T) {
 	addr := server.GetAddress()
 	assert.NotEmpty(t, addr)
 
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	assert.NoError(t, err)
 	defer conn.Close()
 
